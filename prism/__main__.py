@@ -18,6 +18,8 @@ def main():
     b.add_argument("--batch", type=int, default=1024)
     for p in (b, a := sub.add_parser("ask"), s := sub.add_parser("serve")):
         p.add_argument("--out", default="data")
+    for p in (a, s):
+        p.add_argument("--today", help="override the planner's current date (YYYY-MM-DD); default: newest item in the index")
     a.add_argument("question"); s.add_argument("--port", type=int, default=8080)
     s.add_argument("--host", default="127.0.0.1", help="bind address (use 0.0.0.0 to expose; set --token)")
     s.add_argument("--token", default=os.environ.get("PRISM_TOKEN"), help="bearer token required for POST endpoints")
@@ -33,7 +35,7 @@ def main():
         P.build(stage, index, n_shards=args.shards); P.save_plan(index, descs)
         return
     from .engine import Engine
-    eng = Engine(index, model)
+    eng = Engine(index, model, today=getattr(args, "today", None))
     if args.cmd == "ask":
         from . import agent as A
         r = A.default_planner().run(A.Harness(eng, trace_dir=f"{args.out}/traces"), args.question)
