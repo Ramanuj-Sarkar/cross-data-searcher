@@ -72,6 +72,11 @@ def ingest(descs, model_path, stage_dir, workers=2, log=print, every=50, stall_t
                 done.add(json.loads(l)["batch"])
             except (ValueError, KeyError):  # torn last line from a hard kill
                 pass
+    if os.path.exists(man_path) and os.path.getsize(man_path):
+        with open(man_path, "rb+") as fh:  # a hard kill can leave a torn last line with no newline: terminate it
+            fh.seek(-1, os.SEEK_END)
+            if fh.read(1) != b"\n":
+                fh.write(b"\n")
     todo = [d for d in descs if d["batch"] not in done]
     log(f"ingest: {len(descs)} batches planned, {len(done)} already staged, {len(todo)} to run, {workers} workers")
     for v in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "VECLIB_MAXIMUM_THREADS", "MKL_NUM_THREADS"):

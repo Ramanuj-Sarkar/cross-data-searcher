@@ -2,9 +2,12 @@
  "config": {
   "items": 1000000,
   "workers": 2,
-  "out": "/private/tmp/claude-501/-Users-ramanujsarkar-Documents-PycharmProjects-prism-demo-searcher/2f9d6951-2a05-4553-a967-c35595433fee/scratchpad/benchdata",
-  "fresh": true
+  "out": "/private/tmp/claude-501/-Users-ramanujsarkar-Documents-PycharmProjects-prism-demo-searcher/71cee56a-c968-4d7e-b59b-39bad3b7a4c9/scratchpad/benchdata",
+  "fresh": true,
+  "ci": false,
+  "results": "results/bench.json"
  },
+ "data_profile": "v2",
  "environment": {
   "machine": "arm64",
   "platform": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
@@ -13,175 +16,304 @@
   "memory_bytes": 34359738368,
   "python": "3.13.5",
   "numpy": "2.5.4",
-  "git_commit": "6f5ef50be54ff06ef92bbc8326bdc994a393aa54",
+  "git_commit": "43cca831de3921656d882186b014f61e0d0df582",
   "git_dirty": true,
-  "timestamp_utc": "2026-10-17T22:14:07Z"
+  "timestamp_utc": "2026-10-17T22:51:50Z"
  },
- "fit_s": 3.130549832712859,
+ "fit_s": 2.2529640002176166,
  "ingest": {
   "items": 999424,
-  "seconds": 57.351107832975686,
-  "items_per_s": 17426.411411452318,
+  "seconds": 59.73332287510857,
+  "items_per_s": 16731.431500799183,
   "per_modality": {
    "dna": 307200,
    "sat": 367616,
    "cell": 324608
   },
-  "batch_latency_p50_ms": 103.40799996629357,
-  "batch_latency_p95_ms": 177.79281246475875,
+  "batch_latency_p50_ms": 108.4910836070776,
+  "batch_latency_p95_ms": 182.09440633654594,
   "workers": 2
  },
  "build": {
   "n": 999424,
   "nlist": 4096,
   "n_shards": 4,
-  "train_s": 13.364106084220111,
-  "build_s": 4.138103332836181,
+  "train_s": 12.987107207998633,
+  "build_s": 3.991497667040676,
   "index_bytes_hot_int8": 281170775,
   "index_bytes_rerank_f16": 511705600
  },
+ "resume": {
+  "batches_total": 976,
+  "dropped_batches": 98,
+  "skipped_batches": 878,
+  "recomputed_batches": 98,
+  "resume_seconds": 6.305030750110745,
+  "identical_after_resume": true,
+  "second_resume_items": 0
+ },
  "text_to_modality_p@10": {
   "sat": {
-   "mean_p@10": 0.945,
+   "mean_p@10": 0.8115384615384614,
    "per_class": {
-    "forest": 0.8,
+    "forest": 0.9,
     "water": 0.95,
-    "urban": 1.0,
-    "desert": 0.95,
-    "cropland": 1.0,
+    "urban": 0.9,
+    "desert": 0.65,
+    "cropland": 0.9,
     "burn_scar": 0.9,
-    "cloud": 1.0,
-    "wetland": 0.95,
-    "shrubland": 0.9,
-    "recovering_burn": 1.0
+    "cloud": 0.95,
+    "wetland": 0.8500000000000001,
+    "shrubland": 0.8,
+    "recovering_burn": 0.8,
+    "grassland": 0.8,
+    "suburban": 0.7,
+    "salt_flat": 0.45
    }
   },
   "dna": {
-   "mean_p@10": 0.9750000000000001,
+   "mean_p@10": 0.890909090909091,
    "per_class": {
-    "aav_capsid": 1.0,
-    "lentiviral_backbone": 1.0,
+    "aav_capsid": 0.9,
+    "lentiviral_backbone": 0.95,
     "crispr_cas9": 0.95,
-    "human_mito": 1.0,
+    "human_mito": 0.55,
     "resistance_plasmid": 1.0,
-    "bacteriophage": 1.0,
-    "aav_rep": 0.95,
-    "cas12a_cassette": 0.9
+    "bacteriophage": 0.8500000000000001,
+    "aav_rep": 0.9,
+    "cas12a_cassette": 0.95,
+    "lentiviral_gag": 0.9,
+    "rodent_mito": 0.95,
+    "phage_t4": 0.9
    }
   },
   "cell": {
-   "mean_p@10": 0.9818181818181819,
+   "mean_p@10": 0.9142857142857144,
    "per_class": {
-    "t_cell": 1.0,
-    "b_cell": 1.0,
-    "monocyte": 0.95,
+    "t_cell": 0.75,
+    "b_cell": 0.75,
+    "monocyte": 0.7,
     "nk_cell": 1.0,
     "hepatocyte": 1.0,
     "neuron": 1.0,
     "cardiomyocyte": 1.0,
     "hsc": 1.0,
-    "cd8_t_cell": 0.95,
-    "macrophage": 1.0,
-    "plasma_cell": 0.9
+    "cd8_t_cell": 0.8500000000000001,
+    "macrophage": 0.9,
+    "plasma_cell": 1.0,
+    "cd4_t_cell": 0.95,
+    "dendritic_cell": 0.9,
+    "memory_b_cell": 1.0
    }
   }
  },
  "ann": {
-  "brute_force_ms_per_query": 10.7051374996081,
+  "brute_force_ms_per_query": 9.957087703514844,
   "sweep": [
    {
     "nprobe": 16,
     "rerank": 1,
-    "recall@10": 0.7810000000000001,
-    "p50_ms": 1.0999790392816067,
-    "p99_ms": 3.6878593824803745,
-    "qps_1thread_client": 790.6694404654119,
-    "frac_scanned": 0.004139384285348361
+    "recall@10": 0.8315,
+    "p50_ms": 0.9940413292497396,
+    "p99_ms": 2.6488736085593683,
+    "qps_1thread_client": 905.5119153467465,
+    "frac_scanned": 0.004668689164959016
    },
    {
     "nprobe": 64,
     "rerank": 1,
-    "recall@10": 0.815,
-    "p50_ms": 2.600917126983404,
-    "p99_ms": 4.249657611362635,
-    "qps_1thread_client": 374.74347204901443,
-    "frac_scanned": 0.017235927894467214
+    "recall@10": 0.8595000000000002,
+    "p50_ms": 2.670916495844722,
+    "p99_ms": 3.9432735135778763,
+    "qps_1thread_client": 360.90557091972283,
+    "frac_scanned": 0.01757112096567623
    },
    {
     "nprobe": 4,
     "rerank": 8,
-    "recall@10": 0.7205000000000001,
-    "p50_ms": 1.3193124905228615,
-    "p99_ms": 2.254587253555655,
-    "qps_1thread_client": 741.2187599606343,
-    "frac_scanned": 0.0011786789190573771
+    "recall@10": 0.7645000000000001,
+    "p50_ms": 1.290665939450264,
+    "p99_ms": 6.061035264283413,
+    "qps_1thread_client": 651.5077971135573,
+    "frac_scanned": 0.0011526639344262295
    },
    {
     "nprobe": 8,
     "rerank": 8,
-    "recall@10": 0.865,
-    "p50_ms": 1.099271234124899,
-    "p99_ms": 1.850018776021897,
-    "qps_1thread_client": 886.8555370998262,
-    "frac_scanned": 0.0020261670722336064
+    "recall@10": 0.8895000000000001,
+    "p50_ms": 1.0035415180027485,
+    "p99_ms": 2.6432250626385123,
+    "qps_1thread_client": 919.1820691419324,
+    "frac_scanned": 0.00248443103227459
    },
    {
     "nprobe": 16,
     "rerank": 8,
-    "recall@10": 0.9515,
-    "p50_ms": 1.430354081094265,
-    "p99_ms": 2.633169465698302,
-    "qps_1thread_client": 664.461735738975,
-    "frac_scanned": 0.004139384285348361
+    "recall@10": 0.9644999999999999,
+    "p50_ms": 1.1562914587557316,
+    "p99_ms": 2.2174246981739913,
+    "qps_1thread_client": 806.7378719157529,
+    "frac_scanned": 0.004668689164959016
    },
    {
     "nprobe": 32,
     "rerank": 8,
-    "recall@10": 0.9884999999999999,
-    "p50_ms": 1.8500001169741154,
-    "p99_ms": 4.384413422085344,
-    "qps_1thread_client": 500.12523324353333,
-    "frac_scanned": 0.0088470959272541
+    "recall@10": 0.996,
+    "p50_ms": 1.6329791396856308,
+    "p99_ms": 2.5285966927185655,
+    "qps_1thread_client": 591.2448568584545,
+    "frac_scanned": 0.009073226178278689
    },
    {
     "nprobe": 64,
     "rerank": 8,
-    "recall@10": 0.998,
-    "p50_ms": 2.905958564952016,
-    "p99_ms": 4.172503403387964,
-    "qps_1thread_client": 332.44913492213936,
-    "frac_scanned": 0.017235927894467214
+    "recall@10": 0.9995,
+    "p50_ms": 2.587062306702137,
+    "p99_ms": 3.296310729347169,
+    "qps_1thread_client": 380.84903217485805,
+    "frac_scanned": 0.01757112096567623
    }
   ]
  },
- "filtered_search_p50_ms": 2.1538124419748783,
+ "filtered_search_p50_ms": 2.002416644245386,
  "agent": [
   {
-   "run_id": "61af4dc3c1d6",
-   "answer": "**Satellite** \u2014 \u201cFind wildfire burn scars near Malibu in 2025\u201d \u00b7 filters {'place': 'malibu', 'date_from': '2025-01-01', 'date_to': '2025-12-31'} \u00b7 probed 32 lists / scanned 1,651 vectors\nTop hits: #751054 (malibu, 2025-01-12, NDVI 0.295, NBR -0.274, score 0.5445); #880026 (malibu, 2025-10-22, NDVI 0.295, NBR -0.28, score 0.5444); #990851 (malibu, 2025-08-18, NDVI 0.297, NBR -0.33, score 0.543); #204237 (malibu, 2025-10-12, NDVI 0.264, NBR -0.327, score 0.543); #180166 (malibu, 2025-08-17, NDVI 0.302, NBR -0.339, score 0.5428)\nInspected #751054: bands {'B': 0.049, 'G': 0.063, 'R': 0.062, 'NIR': 0.144, 'SWIR': 0.217} \u2192 s3://prism-demo/sat/batch-000733/item-0462\nInspected #880026: bands {'B': 0.051, 'G': 0.065, 'R': 0.06, 'NIR': 0.144, 'SWIR': 0.211} \u2192 s3://prism-demo/sat/batch-000859/item-0410\nBy region: malibu: 8 (mean NBR -0.314)",
+   "run_id": "e8bf00ee8815",
+   "answer": "**Satellite** \u2014 \u201cFind wildfire burn scars near Malibu in 2025\u201d \u00b7 filters {'place': 'malibu', 'date_from': '2025-01-01', 'date_to': '2025-12-31'} \u00b7 probed 32 lists / scanned 1,465 vectors\nTop hits: #483694[region=malibu, date=2025-02-12, ndvi=0.453, nbr=-0.165] (score 0.5406); #298188[region=malibu, date=2025-03-26, ndvi=0.458, nbr=-0.115] (score 0.539); #361248[region=malibu, date=2025-03-25, ndvi=0.41, nbr=-0.262] (score 0.5384); #930531[region=malibu, date=2025-04-18, ndvi=0.467, nbr=-0.208] (score 0.5383); #403305[region=malibu, date=2025-05-10, ndvi=0.439, nbr=-0.242] (score 0.5381)\nInspected #483694: bands {'B': 0.053, 'G': 0.085, 'R': 0.067, 'NIR': 0.199, 'SWIR': 0.256} \u2192 s3://prism-demo/sat/batch-000472/item-0366\nInspected #298188: bands {'B': 0.048, 'G': 0.07, 'R': 0.059, 'NIR': 0.182, 'SWIR': 0.204} \u2192 s3://prism-demo/sat/batch-000291/item-0204\nBy region: malibu: 8 (mean NBR -0.214)",
    "grounded": true,
    "ungrounded_ids": [],
+   "claims": {
+    "checked": 20,
+    "verified": 20,
+    "contradicted": [],
+    "unverifiable": []
+   },
    "steps": 4,
-   "total_ms": 146.4,
-   "trace": "results/traces/61af4dc3c1d6.jsonl"
+   "total_ms": 144.6,
+   "trace": "/private/tmp/claude-501/-Users-ramanujsarkar-Documents-PycharmProjects-prism-demo-searcher/71cee56a-c968-4d7e-b59b-39bad3b7a4c9/scratchpad/benchdata/traces/e8bf00ee8815.jsonl"
   },
   {
-   "run_id": "72e6c2707907",
-   "answer": "**Satellite** \u2014 \u201cShow burned areas in the Angeles National Forest since 2025\u201d \u00b7 filters {'place': 'angeles national forest', 'date_from': '2025-01-01'} \u00b7 probed 32 lists / scanned 2,127 vectors\nTop hits: #288063 (angeles national forest, 2026-04-15, NDVI 0.668, NBR 0.135, score 0.3571); #754382 (angeles national forest, 2025-02-20, NDVI 0.461, NBR -0.04, score 0.3554); #436402 (angeles national forest, 2026-06-18, NDVI 0.549, NBR 0.045, score 0.3551); #516082 (angeles national forest, 2025-06-02, NDVI 0.534, NBR 0.078, score 0.3551); #169269 (angeles national forest, 2025-12-28, NDVI 0.539, NBR 0.029, score 0.3541)\nInspected #288063: bands {'B': 0.053, 'G': 0.088, 'R': 0.066, 'NIR': 0.372, 'SWIR': 0.27} \u2192 s3://prism-demo/sat/batch-000281/item-0319\nInspected #754382: bands {'B': 0.05, 'G': 0.078, 'R': 0.072, 'NIR': 0.315, 'SWIR': 0.272} \u2192 s3://prism-demo/sat/batch-000736/item-0718\nBy region: angeles national forest: 8 (mean NBR 0.05)\n\n**Satellite** \u2014 \u201cdense forest in the Angeles National Forest\u201d \u00b7 filters {'place': 'angeles national forest'} \u00b7 probed 32 lists / scanned 6,680 vectors\nTop hits: #171808 (angeles national forest, 2024-06-12, NDVI 0.82, NBR 0.373, score 0.3712); #949995 (angeles national forest, 2026-09-24, NDVI 0.822, NBR 0.367, score 0.3703); #93885 (angeles national forest, 2025-12-30, NDVI 0.824, NBR 0.43, score 0.3692); #982913 (angeles national forest, 2025-03-07, NDVI 0.821, NBR 0.376, score 0.369); #595951 (angeles national forest, 2024-11-17, NDVI 0.822, NBR 0.427, score 0.3689)\nInspected #171808: bands {'B': 0.04, 'G': 0.074, 'R': 0.047, 'NIR': 0.473, 'SWIR': 0.216} \u2192 s3://prism-demo/sat/batch-000167/item-0800\nInspected #949995: bands {'B': 0.04, 'G': 0.081, 'R': 0.047, 'NIR': 0.484, 'SWIR': 0.224} \u2192 s3://prism-demo/sat/batch-000927/item-0747\nBy region: angeles national forest: 8 (mean NBR 0.399)",
+   "run_id": "d5548156d851",
+   "answer": "**Satellite** \u2014 \u201cShow burned areas in the Angeles National Forest since 2025\u201d \u00b7 filters {'place': 'angeles national forest', 'date_from': '2025-01-01'} \u00b7 probed 32 lists / scanned 2,249 vectors\nTop hits: #313135[region=angeles national forest, date=2025-11-25, ndvi=0.496, nbr=-0.055] (score 0.3496); #952539[region=angeles national forest, date=2026-08-25, ndvi=0.471, nbr=-0.033] (score 0.3489); #588642[region=angeles national forest, date=2025-05-23, ndvi=0.506, nbr=-0.063] (score 0.3488); #967977[region=angeles national forest, date=2026-01-09, ndvi=0.514, nbr=-0.094] (score 0.3486); #194828[region=angeles national forest, date=2025-05-05, ndvi=0.489, nbr=-0.024] (score 0.3486)\nInspected #313135: bands {'B': 0.054, 'G': 0.092, 'R': 0.078, 'NIR': 0.317, 'SWIR': 0.301} \u2192 s3://prism-demo/sat/batch-000305/item-0815\nInspected #952539: bands {'B': 0.053, 'G': 0.079, 'R': 0.08, 'NIR': 0.313, 'SWIR': 0.281} \u2192 s3://prism-demo/sat/batch-000930/item-0219\nBy region: angeles national forest: 8 (mean NBR -0.037)\n\n**Satellite** \u2014 \u201cdense forest in the Angeles National Forest\u201d \u00b7 filters {'place': 'angeles national forest'} \u00b7 probed 32 lists / scanned 7,063 vectors\nTop hits: #406399[region=angeles national forest, date=2026-07-04, ndvi=0.794, nbr=0.379] (score 0.3036); #410862[region=angeles national forest, date=2026-07-13, ndvi=0.805, nbr=0.392] (score 0.2979); #118159[region=angeles national forest, date=2025-03-22, ndvi=0.815, nbr=0.323] (score 0.2972); #885892[region=angeles national forest, date=2024-12-03, ndvi=0.811, nbr=0.403] (score 0.2971); #376099[region=angeles national forest, date=2025-01-29, ndvi=0.807, nbr=0.398] (score 0.2949)\nInspected #406399: bands {'B': 0.05, 'G': 0.11, 'R': 0.07, 'NIR': 0.6, 'SWIR': 0.27} \u2192 s3://prism-demo/sat/batch-000396/item-0895\nInspected #410862: bands {'B': 0.05, 'G': 0.093, 'R': 0.061, 'NIR': 0.556, 'SWIR': 0.243} \u2192 s3://prism-demo/sat/batch-000401/item-0238\nBy region: angeles national forest: 8 (mean NBR 0.388)",
    "grounded": true,
    "ungrounded_ids": [],
+   "claims": {
+    "checked": 40,
+    "verified": 40,
+    "contradicted": [],
+    "unverifiable": []
+   },
    "steps": 8,
-   "total_ms": 297.1,
-   "trace": "results/traces/72e6c2707907.jsonl"
+   "total_ms": 285.3,
+   "trace": "/private/tmp/claude-501/-Users-ramanujsarkar-Documents-PycharmProjects-prism-demo-searcher/71cee56a-c968-4d7e-b59b-39bad3b7a4c9/scratchpad/benchdata/traces/d5548156d851.jsonl"
   },
   {
-   "run_id": "8d2651b9a416",
-   "answer": "**DNA** \u2014 \u201cAAV capsid sequences for liver gene therapy\u201d \u00b7 probed 32 lists / scanned 9,277 vectors\nTop hits: #198220 (GC 0.457, 1000 bp, score 0.6162); #111583 (GC 0.447, 1000 bp, score 0.6112); #56740 (GC 0.435, 1000 bp, score 0.6097); #975949 (GC 0.429, 1000 bp, score 0.6043); #51748 (GC 0.459, 1000 bp, score 0.6033)\nInspected #198220: TACCCCCTCCTTCTGAAGTTGACGGTGCATATTTACATTTGGAGAATTTCGTCCCATTAC\u2026 \u2192 s3://prism-demo/dna/batch-000193/item-0588\nInspected #111583: GCTATTCCTTTGTGACGGGAGAGCTTAGGATGCAACCCATTACCGTGATGTTATGTACTG\u2026 \u2192 s3://prism-demo/dna/batch-000108/item-0991\n\n**Single-cell** \u2014 \u201chepatocytes expressing ALB\u201d \u00b7 probed 32 lists / scanned 7,840 vectors\nTop hits: #828576 (top marker TTR, 733 genes, score 0.693); #566917 (top marker ALB, 730 genes, score 0.6781); #399794 (top marker APOA1, 731 genes, score 0.6604); #347658 (top marker SERPINA1, 691 genes, score 0.6582); #488355 (top marker TTR, 737 genes, score 0.6575)\nInspected #828576: {'TTR': 3.46, 'SERPINA1': 3.33, 'APOA1': 2.8, 'TNNT2': 2.16, 'C1QA': 1.58} \u2192 s3://prism-demo/cell/batch-000809/item-0160\nInspected #566917: {'ALB': 2.8, 'TTR': 2.54, 'SERPINA1': 2.17, 'MSR1': 1.58, 'APOA1': 1.58} \u2192 s3://prism-demo/cell/batch-000553/item-0645",
+   "run_id": "2ed23b413018",
+   "answer": "**DNA** \u2014 \u201cAAV capsid sequences for liver gene therapy\u201d \u00b7 probed 32 lists / scanned 9,150 vectors\nTop hits: #193011[gc=0.438, length=1000] (score 0.6022); #559011[gc=0.452, length=1000] (score 0.6008); #824818[gc=0.452, length=1000] (score 0.5965); #705031[gc=0.451, length=1000] (score 0.5882); #505379[gc=0.429, length=1000] (score 0.5805)\nInspected #193011: CTGTGTGGTCACTATTAATTAACGATTTAAGATTTTCGGGCCTCACCAACGCTGGATCAA\u2026 \u2192 s3://prism-demo/dna/batch-000188/item-0499\nInspected #559011: TGCCCCATCATGGAACCAAGCGACAACACCTAGTTTGCTGCGTCGGAGGACCTGAGGCCC\u2026 \u2192 s3://prism-demo/dna/batch-000545/item-0931\n\n**Single-cell** \u2014 \u201chepatocytes expressing ALB\u201d \u00b7 probed 32 lists / scanned 10,914 vectors\nTop hits: #850200[top_marker=CD3E, genes_detected=674] (score 0.6715); #971406[top_marker=ALB, genes_detected=734] (score 0.6658); #396897[top_marker=ALB, genes_detected=464] (score 0.6561); #730231[top_marker=SERPINA1, genes_detected=533] (score 0.6558); #335972[top_marker=SERPINA1, genes_detected=832] (score 0.6546)\nInspected #850200: {'CD3E': 1.65, 'APOA1': 1.65, 'CD79B': 1.65, 'FCN1': 1.65, 'MYL7': 0.0} \u2192 s3://prism-demo/cell/batch-000830/item-0280\nInspected #971406: {'ALB': 3.04, 'SERPINA1': 2.66, 'CD2': 1.47, 'CD79A': 1.47, 'TTR': 1.47} \u2192 s3://prism-demo/cell/batch-000948/item-0654",
    "grounded": true,
    "ungrounded_ids": [],
+   "claims": {
+    "checked": 20,
+    "verified": 20,
+    "contradicted": [],
+    "unverifiable": []
+   },
    "steps": 6,
-   "total_ms": 294.4,
-   "trace": "results/traces/8d2651b9a416.jsonl"
+   "total_ms": 307.0,
+   "trace": "/private/tmp/claude-501/-Users-ramanujsarkar-Documents-PycharmProjects-prism-demo-searcher/71cee56a-c968-4d7e-b59b-39bad3b7a4c9/scratchpad/benchdata/traces/2ed23b413018.jsonl"
+  }
+ ],
+ "checks": [
+  {
+   "check": "recall@10 (nprobe 32 + rerank)",
+   "value": 0.996,
+   "op": ">=",
+   "bound": 0.9,
+   "ok": true
+  },
+  {
+   "check": "text->sat p@10",
+   "value": 0.8115,
+   "op": ">=",
+   "bound": 0.75,
+   "ok": true
+  },
+  {
+   "check": "text->dna p@10",
+   "value": 0.8909,
+   "op": ">=",
+   "bound": 0.75,
+   "ok": true
+  },
+  {
+   "check": "text->cell p@10",
+   "value": 0.9143,
+   "op": ">=",
+   "bound": 0.75,
+   "ok": true
+  },
+  {
+   "check": "search p50 ms",
+   "value": 1.633,
+   "op": "<=",
+   "bound": 50.0,
+   "ok": true
+  },
+  {
+   "check": "filtered search p50 ms",
+   "value": 2.0024,
+   "op": "<=",
+   "bound": 100.0,
+   "ok": true
+  },
+  {
+   "check": "ingest items/s",
+   "value": 16731.4315,
+   "op": ">=",
+   "bound": 1000.0,
+   "ok": true
+  },
+  {
+   "check": "agent runs grounded",
+   "value": 1.0,
+   "op": "==",
+   "bound": 1.0,
+   "ok": true
+  },
+  {
+   "check": "agent claims contradicted",
+   "value": 0.0,
+   "op": "==",
+   "bound": 0.0,
+   "ok": true
+  },
+  {
+   "check": "agent claims verified",
+   "value": 80.0,
+   "op": ">=",
+   "bound": 1.0,
+   "ok": true
+  },
+  {
+   "check": "resume recomputes only dropped batches",
+   "value": 1.0,
+   "op": "==",
+   "bound": 1.0,
+   "ok": true
+  },
+  {
+   "check": "resume output identical to original",
+   "value": 1.0,
+   "op": "==",
+   "bound": 1.0,
+   "ok": true
+  },
+  {
+   "check": "second resume recomputes nothing",
+   "value": 0.0,
+   "op": "==",
+   "bound": 0.0,
+   "ok": true
   }
  ]
 }

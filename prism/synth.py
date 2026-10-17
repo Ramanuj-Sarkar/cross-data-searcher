@@ -15,7 +15,7 @@ import numpy as np
 # The last three are deliberately confusable with earlier classes (wetland~water/forest, shrubland~desert/forest,
 # recovering_burn~burn_scar/forest): overlapping spectra and geography, so retrieval is not trivially separable.
 SAT_CLASSES = ["forest", "water", "urban", "desert", "cropland", "burn_scar", "cloud",
-               "wetland", "shrubland", "recovering_burn"]
+               "wetland", "shrubland", "recovering_burn", "grassland", "suburban", "salt_flat"]
 BANDS = ["B", "G", "R", "NIR", "SWIR"]
 TILE = 32
 _SPECTRA = {
@@ -29,6 +29,9 @@ _SPECTRA = {
     "wetland":   [0.05, 0.08, 0.05, 0.28, 0.09],
     "shrubland": [0.09, 0.14, 0.16, 0.32, 0.30],
     "recovering_burn": [0.05, 0.07, 0.07, 0.22, 0.24],
+    "grassland": [0.07, 0.11, 0.10, 0.34, 0.24],
+    "suburban":  [0.12, 0.15, 0.16, 0.29, 0.27],
+    "salt_flat": [0.30, 0.36, 0.42, 0.46, 0.44],
 }
 _ROAD = np.array([0.10, 0.11, 0.12, 0.14, 0.20], np.float32)
 _SOIL = np.array([0.12, 0.16, 0.20, 0.25, 0.30], np.float32)
@@ -44,25 +47,52 @@ _GEO = {
     "wetland":   [(33.90, -118.55, 0.12), (34.40, -118.55, 0.08)],
     "shrubland": [(34.45, -118.20, 0.30)],
     "recovering_burn": [(34.30, -118.10, 0.12), (34.06, -118.75, 0.06)],
+    "grassland": [(34.20, -118.40, 0.30), (33.10, -115.70, 0.20)],
+    "suburban":  [(34.10, -118.00, 0.25)],
+    "salt_flat": [(35.10, -116.40, 0.30), (33.30, -115.80, 0.10)],
 }
 
 # Fraction of items whose content is drawn from a confusable class while keeping their declared label
 # (annotation noise). Applied only when labels are not supplied, so training data stays clean.
-LABEL_NOISE = 0.04
-_CONFUSABLE = {
-    "sat": [("water", "wetland"), ("forest", "shrubland"), ("desert", "shrubland"), ("burn_scar", "recovering_burn")],
-    "dna": [("aav_capsid", "aav_rep"), ("crispr_cas9", "cas12a_cassette")],
-    "cell": [("t_cell", "cd8_t_cell"), ("monocyte", "macrophage"), ("b_cell", "plasma_cell")],
+LABEL_NOISE = 0.10  # v1: 0.04
+_CONFUSABLE = {  # class -> siblings whose content it can borrow
+    "sat": {"water": ["wetland"], "wetland": ["water", "forest"], "forest": ["shrubland", "wetland"],
+            "desert": ["shrubland", "salt_flat"], "shrubland": ["desert", "forest", "grassland"],
+            "burn_scar": ["recovering_burn"], "recovering_burn": ["burn_scar", "forest"],
+            "cropland": ["grassland"], "grassland": ["cropland", "shrubland"], "urban": ["suburban"],
+            "suburban": ["urban", "grassland"], "salt_flat": ["desert", "cloud"]},
+    "dna": {"aav_capsid": ["aav_rep"], "aav_rep": ["aav_capsid"], "crispr_cas9": ["cas12a_cassette"],
+            "cas12a_cassette": ["crispr_cas9"], "lentiviral_backbone": ["lentiviral_gag"],
+            "lentiviral_gag": ["lentiviral_backbone"], "human_mito": ["rodent_mito"], "rodent_mito": ["human_mito"],
+            "bacteriophage": ["phage_t4"], "phage_t4": ["bacteriophage"]},
+    "cell": {"t_cell": ["cd8_t_cell", "cd4_t_cell"], "cd8_t_cell": ["t_cell"], "cd4_t_cell": ["t_cell"],
+             "monocyte": ["macrophage", "dendritic_cell"], "macrophage": ["monocyte"], "dendritic_cell": ["monocyte"],
+             "b_cell": ["plasma_cell", "memory_b_cell"], "plasma_cell": ["b_cell"], "memory_b_cell": ["b_cell"]},
 }
 
 
 def _content_labels(mod, labels, rng, classes):
     """Labels used to synthesize content: mostly the declared ones, with LABEL_NOISE swapped for a confusable sibling."""
-    partner = np.full(len(classes), -1)
-    for a, b in _CONFUSABLE[mod]:
-        partner[classes.index(a)], partner[classes.index(b)] = classes.index(b), classes.index(a)
-    flip = (rng.random(len(labels)) < LABEL_NOISE) & (partner[labels] >= 0)
-    return np.where(flip, partner[labels], labels)
+    out = labels.copy()
+    flip = rng.random(len(labels)) < LABEL_NOISE
+    for cname, sibs in _CONFUSABLE[mod].items():
+        idx = np.flatnonzero(flip & (labels == classes.index(cname)))
+        if len(idx):
+            out[idx] = [classes.index(sibs[i]) for i in rng.integers(0, len(sibs), len(idx))]
+    return out
+
+
+def _first_sibling(mod, cname):
+    sibs = _CONFUSABLE[mod].get(cname)
+    return sibs[0] if sibs else None
+
+
+# Data profile. v1 = 10 sat / 8 dna / 11 cell classes, 4% label noise, strong signals (baseline in
+# results/bench_baseline.json). v2 = more confusable siblings, 10% label noise, weaker signals.
+PROFILE = "v2"
+PIXEL_NOISE = 0.02      # v1: 0.008
+ILLUM = (0.78, 1.22)    # v1: (0.85, 1.15)
+SPECTRAL_MIX = 0.35     # max share of a sibling class's spectrum/profile blended into an item
 DAY0 = np.datetime64("2024-01-01")
 N_DAYS = 1004  # through 2026-10-01
 
@@ -91,7 +121,12 @@ def gen_sat(n: int, seed: int, labels=None):
         m = len(idx)
         if m == 0:
             continue
-        base = np.array(_SPECTRA[cname], np.float32)[None, :] * rng.normal(1, 0.08, (m, 5)).astype(np.float32)
+        spec = np.array(_SPECTRA[cname], np.float32)[None, :]
+        sib = _first_sibling("sat", cname)
+        if sib:  # blend a random share of the sibling's spectrum into each item
+            w = rng.uniform(0, SPECTRAL_MIX, (m, 1)).astype(np.float32)
+            spec = (1 - w) * spec + w * np.array(_SPECTRA[sib], np.float32)[None, :]
+        base = spec * rng.normal(1, 0.08, (m, 5)).astype(np.float32)
         tex = _smooth(rng, m, 8 if cname in ("forest", "urban") else 4)
         amp = {"water": 0.08, "desert": 0.15, "forest": 0.25}.get(cname, 0.18)
         t = base[:, None, None, :] * (1 + amp * tex[..., None])
@@ -114,8 +149,8 @@ def gen_sat(n: int, seed: int, labels=None):
             ground = np.array(_SPECTRA["urban"], np.float32)
             a = np.clip(cov * 1.6 - 0.2, 0, 1)[..., None]
             t = a * t + (1 - a) * ground
-        illum = rng.uniform(0.85, 1.15, (m, 1, 1, 1)).astype(np.float32)
-        tiles[idx] = t * illum + rng.normal(0, 0.008, t.shape).astype(np.float32)
+        illum = rng.uniform(*ILLUM, (m, 1, 1, 1)).astype(np.float32)
+        tiles[idx] = t * illum + rng.normal(0, PIXEL_NOISE, t.shape).astype(np.float32)
         # geo
         centers = _GEO[cname]
         pick = rng.integers(0, len(centers), m)
@@ -132,11 +167,17 @@ def gen_sat(n: int, seed: int, labels=None):
 # ----------------------------------------------------------------------------
 # aav_rep and cas12a_cassette share GC content and planted motifs with aav_capsid / crispr_cas9.
 DNA_CLASSES = ["aav_capsid", "lentiviral_backbone", "crispr_cas9", "human_mito",
-               "resistance_plasmid", "bacteriophage", "aav_rep", "cas12a_cassette"]
-_SHARES_MOTIFS = {"aav_rep": "aav_capsid", "cas12a_cassette": "crispr_cas9"}
+               "resistance_plasmid", "bacteriophage", "aav_rep", "cas12a_cassette",
+               "lentiviral_gag", "rodent_mito", "phage_t4"]
+_SHARES_MOTIFS = {"aav_rep": "aav_capsid", "cas12a_cassette": "crispr_cas9", "lentiviral_gag": "lentiviral_backbone",
+                  "rodent_mito": "human_mito", "phage_t4": "bacteriophage"}
+MOTIF_COUNT = (2, 6)   # v1: (4, 9) motif insertions per sequence
+MOTIF_MUT = 0.10       # v1: 0.04
+BASE_MUT = 0.03        # v1: 0.01
 _GC = {"aav_capsid": 0.55, "lentiviral_backbone": 0.45, "crispr_cas9": 0.50,
        "human_mito": 0.44, "resistance_plasmid": 0.52, "bacteriophage": 0.49,
-       "aav_rep": 0.55, "cas12a_cassette": 0.50}
+       "aav_rep": 0.55, "cas12a_cassette": 0.50,
+       "lentiviral_gag": 0.45, "rodent_mito": 0.44, "phage_t4": 0.49}
 DNA_LEN = 1000
 _MOTIF_LEN = 24
 _FAM_CACHE: dict = {}
@@ -149,8 +190,8 @@ def _fam(name):
         p = np.array([(1 - gc) / 2, gc / 2, gc / 2, (1 - gc) / 2])
         T = np.stack([r.dirichlet(p * 25 + 0.5) for _ in range(4)])
         motifs = r.integers(0, 4, (5, _MOTIF_LEN)).astype(np.uint8)
-        if name in _SHARES_MOTIFS:  # 3 of 5 motifs inherited from the sibling family
-            motifs[:3] = _fam(_SHARES_MOTIFS[name])[2][:3]
+        if name in _SHARES_MOTIFS:  # 4 of 5 motifs inherited from the sibling family
+            motifs[:4] = _fam(_SHARES_MOTIFS[name])[2][:4]
         _FAM_CACHE[name] = (p, np.cumsum(T, 1), motifs)
     return _FAM_CACHE[name]
 
@@ -173,15 +214,15 @@ def gen_dna(n: int, seed: int, labels=None):
         for j in range(1, DNA_LEN):
             s[:, j] = (u[:, j, None] > cT[s[:, j - 1]]).sum(1)
         rows = np.arange(m)[:, None]
-        for _ in range(int(rng.integers(4, 9))):
+        for _ in range(int(rng.integers(*MOTIF_COUNT))):
             mi = rng.integers(0, len(motifs), m)
             pos = rng.integers(0, DNA_LEN - _MOTIF_LEN, m)
             mot = motifs[mi].copy()
-            mut = rng.random(mot.shape) < 0.04
+            mut = rng.random(mot.shape) < MOTIF_MUT
             mot[mut] = rng.integers(0, 4, mut.sum())
             s[rows, pos[:, None] + np.arange(_MOTIF_LEN)] = mot
         seqs[idx] = s
-    mut = rng.random(seqs.shape) < 0.01
+    mut = rng.random(seqs.shape) < BASE_MUT
     seqs[mut] = rng.integers(0, 4, mut.sum())
     days = rng.integers(0, N_DAYS, n).astype(np.int32)
     nan = np.full(n, np.nan, np.float32)
@@ -197,8 +238,11 @@ def dna_to_str(codes) -> str:
 # ----------------------------------------------------------------------------
 # cd8_t_cell, macrophage and plasma_cell share markers and most of their expression program with t_cell, monocyte, b_cell.
 CELL_CLASSES = ["t_cell", "b_cell", "monocyte", "nk_cell", "hepatocyte", "neuron",
-                "cardiomyocyte", "hsc", "cd8_t_cell", "macrophage", "plasma_cell"]
-_SIBLING = {"cd8_t_cell": "t_cell", "macrophage": "monocyte", "plasma_cell": "b_cell"}
+                "cardiomyocyte", "hsc", "cd8_t_cell", "macrophage", "plasma_cell",
+                "cd4_t_cell", "dendritic_cell", "memory_b_cell"]
+_SIBLING = {"cd8_t_cell": "t_cell", "macrophage": "monocyte", "plasma_cell": "b_cell",
+            "cd4_t_cell": "t_cell", "dendritic_cell": "monocyte", "memory_b_cell": "b_cell"}
+MARKER_FOLD = 15       # v1: 40-fold marker up-regulation
 _MARKERS = {
     "t_cell": ["CD3E", "CD3D", "IL7R", "CD2"],
     "b_cell": ["CD19", "MS4A1", "CD79A", "CD79B"],
@@ -211,6 +255,9 @@ _MARKERS = {
     "cd8_t_cell": ["CD3E", "CD8A", "CD8B", "GZMK"],
     "macrophage": ["CD68", "CD14", "C1QA", "MSR1"],
     "plasma_cell": ["CD79A", "MZB1", "JCHAIN", "SDC1"],
+    "cd4_t_cell": ["CD3E", "CD4", "IL7R", "CCR7"],
+    "dendritic_cell": ["CD14", "CD1C", "FCER1A", "CLEC10A"],
+    "memory_b_cell": ["CD19", "CD27", "MS4A1", "AIM2"],
 }
 N_GENES = 2000
 MARKER_GENES = list(dict.fromkeys(g for c in CELL_CLASSES for g in _MARKERS[c]))  # shared markers listed once
@@ -228,10 +275,10 @@ def _profiles():
         pool = np.arange(len(MARKER_GENES), N_GENES)
         for ci, c in enumerate(CELL_CLASSES):
             mult = np.ones(N_GENES)
-            mult[[GENES.index(g) for g in _MARKERS[c]]] = 40
+            mult[[GENES.index(g) for g in _MARKERS[c]]] = MARKER_FOLD
             prog = r.choice(pool, 60, replace=False)
-            if c in _SIBLING:  # keep 45 of the sibling's 60 program genes
-                prog = np.concatenate([r.choice(progs[_SIBLING[c]], 45, replace=False), prog[:15]])
+            if c in _SIBLING:  # keep 50 of the sibling's 60 program genes
+                prog = np.concatenate([r.choice(progs[_SIBLING[c]], 50, replace=False), prog[:10]])
             progs[c] = prog
             mult[prog] *= 4
             q = mu * mult
@@ -246,7 +293,11 @@ def gen_cell(n: int, seed: int, labels=None):
     if labels is None:
         labels = rng.integers(0, len(CELL_CLASSES), n)
         gen = _content_labels("cell", labels, rng, CELL_CLASSES)
-    P = _profiles()[gen]
+    prof = _profiles()
+    P = prof[gen]
+    sib = np.array([CELL_CLASSES.index(sc) if (sc := _first_sibling("cell", c)) else -1 for c in CELL_CLASSES])[gen]
+    w = (rng.uniform(0, SPECTRAL_MIX, n) * (sib >= 0))[:, None]  # blend part of the sibling's expression profile
+    P = (1 - w) * P + w * prof[np.where(sib >= 0, sib, gen)]
     lib = rng.lognormal(np.log(2500), 0.5, n)[:, None]
     rate = P * lib * rng.gamma(2.0, 0.5, P.shape)
     counts = rng.poisson(rate).astype(np.int32)
@@ -281,6 +332,12 @@ CAPTIONS = {
         "recovering_burn": ["recovering burn area with regrowth", "regrowing vegetation after a wildfire",
                             "old burn scar with green recovery", "post fire vegetation regrowth",
                             "partially recovered burned hillside", "burned land recolonized by plants"],
+        "grassland": ["open grassland and pasture", "rolling grass-covered hills", "meadow with low green vegetation",
+                      "savanna-like grass and scattered shrubs", "rangeland with seasonal grass", "grazing land"],
+        "suburban": ["suburban housing with yards", "low-density residential neighborhoods", "tree-lined suburban streets",
+                     "subdivision of houses and lawns", "urban fringe with gardens", "residential area with green lots"],
+        "salt_flat": ["dry salt flat playa", "bright evaporite lake bed", "white alkali flats in the desert",
+                      "barren playa with salt crust", "dry lakebed with pale soil", "salt pan terrain"],
         "cloud": ["cloud covered scene", "thick cloud cover obscuring ground", "bright white clouds",
                   "cloudy image with haze", "overcast sky occluding land", "cloud contamination"],
     },
@@ -301,6 +358,12 @@ CAPTIONS = {
                     "gene therapy AAV rep helper cassette", "recombinant AAV Rep78 and Rep52"],
         "cas12a_cassette": ["Cas12a editing cassette", "Cpf1 nuclease CRISPR construct", "CRISPR Cas12a crRNA array",
                             "genome editing with Cas12a", "Cas12a Cpf1 gene editing sequence"],
+        "lentiviral_gag": ["lentiviral gag-pol packaging gene", "HIV gag polyprotein lentivirus construct",
+                           "lentivirus Gag Pol packaging plasmid", "gag pol rev helper sequence", "lentiviral helper plasmid"],
+        "rodent_mito": ["mouse mitochondrial DNA", "rodent mtDNA genome fragment", "murine mitochondrial genome",
+                        "rat mitochondria sequence", "mouse mitochondrial gene sequence"],
+        "phage_t4": ["T4 bacteriophage genome", "enterobacteria phage T4 DNA", "T4 phage lytic virus sequence",
+                     "myovirus phage that infects E. coli", "phage T4 structural genes"],
         "bacteriophage": ["bacteriophage genome", "lambda phage DNA", "phage that infects bacteria",
                           "viral phage sequence", "bacteriophage lytic genes"],
     },
@@ -327,6 +390,12 @@ CAPTIONS = {
                        "myeloid macrophage expressing CD14", "phagocytic macrophage cell"],
         "plasma_cell": ["plasma cell", "antibody secreting plasma cell", "MZB1 and JCHAIN plasma cells",
                         "SDC1 positive plasma B cell", "immunoglobulin producing plasma cells"],
+        "cd4_t_cell": ["CD4 positive helper T cell", "CD4 and IL7R expressing T lymphocyte", "helper T cells",
+                       "CCR7 CD4 T cells", "T helper lymphocyte"],
+        "dendritic_cell": ["dendritic cell", "CD1C positive dendritic cells", "antigen presenting dendritic cell",
+                           "FCER1A myeloid dendritic cell", "CLEC10A dendritic cells"],
+        "memory_b_cell": ["memory B cell", "CD27 positive memory B lymphocyte", "class-switched memory B cells",
+                          "AIM2 memory B cell", "long-lived memory B lymphocyte"],
         "hsc": ["hematopoietic stem cell", "CD34 positive stem and progenitor cell", "HSC expressing KIT and PROM1",
                 "bone marrow stem cell", "blood stem progenitor cells"],
     },

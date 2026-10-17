@@ -24,3 +24,12 @@ jobs:
         run: ruff check .
       - name: Test
         run: pytest -q
+      - name: Subset benchmark (recall, precision, latency, resume, grounding)
+        run: python bench.py --ci --results bench_ci.json
+      - name: Upload benchmark results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-ci-py${{ matrix.python-version }}
+          path: bench_ci.json
+          if-no-files-found: ignore

@@ -54,6 +54,42 @@ _PY = {"string": str, "integer": int, "array": list}
 
 # Matches '#123', 'item 123', 'items #123', 'ID: 123', 'id=123' (case-insensitive).
 _CITE_RX = re.compile(r"(?:#|\b(?:item|id)s?\b[\s:=#]*)(\d+)", re.I)
+# Structured citation: '#123[ndvi=0.42, region=malibu]' -- field claims checked against the tool results.
+_CLAIM_RX = re.compile(r"#(\d+)\s*\[([^\]]*)\]")
+_NOT_FACTS = {"score", "note"}
+_MIN_TOL = 0.5e-3  # catalog cards round floats to 3 decimals
+
+
+def parse_claims(answer):
+    """-> [(item_id, field, raw_value)] from every '#id[field=value, ...]' citation."""
+    out = []
+    for m in _CLAIM_RX.finditer(answer):
+        for part in m.group(2).split(","):
+            k, sep, v = part.partition("=")
+            if sep and k.strip() and v.strip():
+                out.append((int(m.group(1)), k.strip().lower(), v.strip().strip("\"'")))
+    return out
+
+
+def _flatten(d, prefix=""):
+    for k, v in d.items():
+        key = f"{prefix}{k}".lower()
+        if isinstance(v, dict):
+            yield from _flatten(v, key + ".")
+        elif not isinstance(v, (list, tuple)) and k not in _NOT_FACTS:
+            yield key, v
+
+
+def claim_matches(actual, raw):
+    """Numbers match at the precision the claim states (never tighter than the catalog's rounding); text matches case-insensitively."""
+    if isinstance(actual, (int, float)) and not isinstance(actual, bool):
+        try:
+            claimed = float(raw)
+        except ValueError:
+            return False
+        decimals = len(raw.split(".")[1]) if "." in raw else 0
+        return abs(actual - claimed) <= max(0.5 * 10 ** -decimals, _MIN_TOL) + 1e-9
+    return str(actual).strip().lower() == raw.strip().lower()
 
 
 class PolicyError(Exception):
@@ -68,7 +104,7 @@ class Harness:
 
     def start(self, question):
         self.run_id = uuid.uuid4().hex[:12]; self.t0 = time.perf_counter(); self.steps = 0
-        self.seen_ids = set(); self.trace = open(f"{self.trace_dir}/{self.run_id}.jsonl", "w")
+        self.seen_ids = set(); self.facts = {}; self.trace = open(f"{self.trace_dir}/{self.run_id}.jsonl", "w")
         self._log({"event": "start", "question": question})
 
     def _log(self, rec):
@@ -126,7 +162,7 @@ class Harness:
             ok = True
         except (PolicyError, ValueError, KeyError) as e:
             out, ok = {"error": str(e)}, False
-        self._collect_ids(out)
+        self._collect(out)
         blob = json.dumps(out, default=str)
         self._log({"event": "tool", "step": self.steps, "tool": name, "args": args, "ok": ok,
                    "ms": round((time.perf_counter() - t) * 1e3, 2),
@@ -134,12 +170,27 @@ class Harness:
                    "n_hits": len(out.get("hits", [])) if isinstance(out, dict) else None})
         return out
 
-    def _collect_ids(self, out):
+    def _collect(self, out):
+        """Remember which ids tools returned and the measured fields they returned for each."""
         if isinstance(out, dict):
-            if "id" in out:
-                self.seen_ids.add(int(out["id"]))
-            for h in out.get("hits", []):
-                self.seen_ids.add(int(h["id"]))
+            for item in ([out] if "id" in out else []) + list(out.get("hits", [])):
+                self.seen_ids.add(int(item["id"]))
+                self.facts.setdefault(int(item["id"]), {}).update(_flatten(item))
+
+    def check_claims(self, answer):
+        verified, contradicted, unverifiable = 0, [], []
+        for item_id, field, raw in parse_claims(answer):
+            facts = self.facts.get(item_id)
+            if facts is None:
+                unverifiable.append({"id": item_id, "field": field, "reason": "item not returned by any tool"})
+            elif field not in facts:
+                unverifiable.append({"id": item_id, "field": field, "reason": "field not in tool results"})
+            elif claim_matches(facts[field], raw):
+                verified += 1
+            else:
+                contradicted.append({"id": item_id, "field": field, "claimed": raw, "actual": facts[field]})
+        return {"checked": verified + len(contradicted) + len(unverifiable), "verified": verified,
+                "contradicted": contradicted, "unverifiable": unverifiable}
 
     def close(self):
         """Release the trace file; safe to call more than once (e.g. after a failed run)."""
@@ -150,12 +201,14 @@ class Harness:
     def finish(self, answer):
         cited = {int(x) for x in _CITE_RX.findall(answer)}
         ungrounded = sorted(cited - self.seen_ids)
+        claims = self.check_claims(answer)
+        grounded = not ungrounded and not claims["contradicted"]  # a wrong stated value is as bad as a made-up id
         rec = {"event": "finish", "answer": answer, "cited": sorted(cited), "ungrounded": ungrounded,
-               "grounded": not ungrounded, "steps": self.steps,
+               "claims": claims, "grounded": grounded, "steps": self.steps,
                "total_ms": round((time.perf_counter() - self.t0) * 1e3, 1)}
         self._log(rec); self.trace.close()
-        return {"run_id": self.run_id, "answer": answer, "grounded": not ungrounded,
-                "ungrounded_ids": ungrounded, "steps": self.steps, "total_ms": rec["total_ms"],
+        return {"run_id": self.run_id, "answer": answer, "grounded": grounded,
+                "ungrounded_ids": ungrounded, "claims": claims, "steps": self.steps, "total_ms": rec["total_ms"],
                 "trace": f"{self.trace_dir}/{self.run_id}.jsonl"}
 
 
@@ -231,12 +284,12 @@ class RulePlanner:
 
 
 def _fmt_hit(x):
+    """Structured citation: every stated value is checked against the tool results by Harness.finish."""
     if x["modality"] == "sat":
-        return (f"#{x['id']} ({x['region']}, {x['date']}, NDVI {x['ndvi']}, NBR {x['nbr']}, "
-                f"score {x['score']})")
+        return f"#{x['id']}[region={x['region']}, date={x['date']}, ndvi={x['ndvi']}, nbr={x['nbr']}] (score {x['score']})"
     if x["modality"] == "dna":
-        return f"#{x['id']} (GC {x['gc']}, {x['length']} bp, score {x['score']})"
-    return f"#{x['id']} (top marker {x['top_marker']}, {x['genes_detected']} genes, score {x['score']})"
+        return f"#{x['id']}[gc={x['gc']}, length={x['length']}] (score {x['score']})"
+    return f"#{x['id']}[top_marker={x['top_marker']}, genes_detected={x['genes_detected']}] (score {x['score']})"
 
 
 def _section(mod, clause, args, res, details, agg):
@@ -262,8 +315,9 @@ class ClaudePlanner:
     """Claude drives the tool loop through the Messages API (no SDK dependency)."""
     name = "claude"
     SYSTEM = ("You are an analyst agent over a multimodal corpus (satellite tiles, DNA sequences, single-cell "
-              "transcriptomes). Use the tools to answer. Cite every item you mention as #<id>, and only cite ids "
-              "returned by tools. Inspect items before making claims about their properties. Be concise. "
+              "transcriptomes). Use the tools to answer. Cite every item you mention as #<id>[field=value, ...], "
+              "e.g. #12[ndvi=0.42, region=malibu], listing the measured fields you rely on; values must match the "
+              "tool results exactly and only ids returned by tools may be cited. Inspect items before making claims about their properties. Be concise. "
               "Today is {today}.")
 
     def __init__(self, model=None, api_key=None):

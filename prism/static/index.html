@@ -40,6 +40,7 @@ $('#f').onsubmit=async e=>{e.preventDefault();out.replaceChildren();meta.textCon
  out.append(...r.hits.map(hit))};
 $('#ask').onclick=async()=>{out.replaceChildren();meta.textContent='agent working…';const t=performance.now();
  const r=await post('/agent',{question:$('#q').value});if(r.error){meta.textContent=r.error;return}
- meta.textContent=(r.grounded?'grounded':'UNGROUNDED '+r.ungrounded_ids)+' · '+r.steps+' tool calls · '+Math.round(performance.now()-t)+' ms · trace '+r.trace;
+ const bad=[...r.ungrounded_ids.map(i=>'#'+i),...r.claims.contradicted.map(c=>'#'+c.id+'.'+c.field)];
+ meta.textContent=(r.grounded?'grounded':'UNGROUNDED '+bad)+' · '+r.claims.verified+'/'+r.claims.checked+' claims verified · '+r.steps+' tool calls · '+Math.round(performance.now()-t)+' ms · trace '+r.trace;
  const c=el('div','card');c.append(el('pre',null,r.answer.replace(/\*\*/g,'')));out.append(c)};
 </script></body></html>

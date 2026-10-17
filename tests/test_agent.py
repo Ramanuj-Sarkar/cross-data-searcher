@@ -110,6 +110,66 @@ def test_clip_keeps_json_valid():
     assert clipped["truncated"] and 0 < len(clipped["hits"]) < 200
 
 
+# ------------------------------------------------------------------ structured citations
+def _hit_and_harness():
+    h, ENG = harness()
+    h.start("t")
+    hit = h.call("search_corpus", {"query": "burn scar", "modality": "sat", "k": 1})["hits"][0]
+    return h, hit
+
+
+def test_parse_claims():
+    got = A.parse_claims("see #12[ndvi=0.42, Region=malibu] and #7[gc = 0.5] but not #9 or [x=1]")
+    assert got == [(12, "ndvi", "0.42"), (12, "region", "malibu"), (7, "gc", "0.5")]
+
+
+def test_correct_claims_verified_at_stated_precision():
+    h, hit = _hit_and_harness()
+    r = h.finish(f"#{hit['id']}[ndvi={hit['ndvi']}, region={hit['region'].upper()}, date={hit['date']}, "
+                 f"nbr={round(hit['nbr'], 1)}]")
+    assert r["grounded"] and r["claims"]["verified"] == 4 and not r["claims"]["contradicted"]
+
+
+def test_wrong_claim_is_contradicted_and_ungrounds_answer():
+    h, hit = _hit_and_harness()
+    r = h.finish(f"#{hit['id']}[ndvi={hit['ndvi'] + 0.2:.3f}, region={hit['region']}]")
+    assert not r["grounded"] and r["ungrounded_ids"] == []
+    (c,) = r["claims"]["contradicted"]
+    assert c["id"] == hit["id"] and c["field"] == "ndvi" and c["actual"] == hit["ndvi"]
+
+
+def test_unverifiable_claims_are_reported_not_failed():
+    h, hit = _hit_and_harness()
+    r = h.finish(f"#{hit['id']}[elevation=900] and #{hit['id'] + 1}[ndvi=0.1]")
+    reasons = {u["reason"] for u in r["claims"]["unverifiable"]}
+    assert reasons == {"field not in tool results", "item not returned by any tool"}
+    assert r["claims"]["checked"] == 2 and not r["claims"]["contradicted"]
+
+
+def test_inspect_results_feed_nested_claims():
+    h, hit = _hit_and_harness()
+    d = h.call("inspect_item", {"item_id": hit["id"]})
+    nir = d["band_means"]["NIR"]
+    r = h.finish(f"#{hit['id']}[band_means.nir={nir}]")
+    assert r["claims"]["verified"] == 1 and r["grounded"]
+
+
+def test_claude_wrong_claim_flagged_end_to_end():
+    h, ENG = harness()
+    hit = ENG.search("hepatocyte", modality="cell", k=1)["hits"][0]
+    p, _ = scripted([tool_use("search_corpus", {"query": "hepatocyte", "modality": "cell", "k": 1}),
+                     text(f"#{hit['id']}[top_marker=NOT_A_GENE]")])
+    r = p.run(h, "q")
+    assert not r["grounded"] and r["claims"]["contradicted"][0]["field"] == "top_marker"
+
+
+def test_rule_planner_answers_carry_verified_claims():
+    h, _ = harness()
+    r = A.RulePlanner().run(h, "wildfire burn scars near Malibu in 2025; also AAV capsid sequences; also hepatocytes")
+    assert r["grounded"] and r["claims"]["verified"] >= 10
+    assert not r["claims"]["contradicted"] and not r["claims"]["unverifiable"]
+
+
 # ------------------------------------------------------------------ rule planner
 def test_split_clauses():
     assert A.split_clauses("A; B") == ["A", "B"]
