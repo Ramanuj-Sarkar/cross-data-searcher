@@ -10,13 +10,12 @@ import subprocess
 import sys
 import tempfile
 import time
-from typing import Any
 
 import numpy as np
 
 from prism import pipeline as P
 from prism import synth
-from prism.encoders import PrismEncoder
+from prism.encoders import PrismEncoder, _tokens
 from prism.engine import Engine
 from prism.harness import Harness
 from prism.planners import RulePlanner
@@ -59,6 +58,69 @@ HELDOUT["cell"].update({"cd8_t_cell": ["cytotoxic CD8 T lymphocytes", "CD8A T ce
                         "cd4_t_cell": ["helper T lymphocytes", "CD4 T cells"],
                         "dendritic_cell": ["antigen presenting dendritic cells", "CD1C dendritic cells"],
                         "memory_b_cell": ["CD27 memory B lymphocytes", "class switched memory B cells"]})
+# Paraphrases: each query shares NO word (after stop-word removal and plural stemming) with any training caption of
+# its target class or with the generic modality captions -- see word_overlap() and tests/test_encoders.py. A purely
+# lexical encoder can only reach them through stray character n-grams; a semantic encoder should do better.
+PARAPHRASE = {
+    "sat": {
+        "forest": ["timber stands blanketing the slopes", "evergreen woods across highland ridges"],
+        "water": ["lagoons, streams and marine expanses", "rivers and ponds seen from space"],
+        "urban": ["metropolis with skyscrapers and highways", "paved settlement packed with towers and avenues"],
+        "desert": ["parched dunes and rocky wasteland", "hyperarid badlands lacking plants"],
+        "cropland": ["plowed plots growing wheat and corn", "orchards and paddies tended by growers"],
+        "burn_scar": ["blackened ground left by a blaze", "ashen hillsides following conflagration"],
+        "cloud": ["fluffy vapor masses blocking the view", "atmospheric moisture veiling the terrain below"],
+        "wetland": ["bog and fen ecosystems", "sodden reedy lowlands along streams"],
+        "shrubland": ["scattered thorny thickets on parched slopes", "stunted mesquite and sagebrush country"],
+        "recovering_burn": ["seedlings sprouting through ash", "healing landscape reclaimed by new shoots"],
+        "grassland": ["wide prairies dotted with livestock", "tall blades swaying across plains"],
+        "suburban": ["cul-de-sacs of detached homes", "bedroom communities with driveways and swimming pools"],
+        "salt_flat": ["glistening mineral deposits of an ancient basin", "saline hardpan left by an evaporated sea"],
+    },
+    "dna": {
+        "aav_capsid": ["protein shell of a small parvovirus used to deliver therapies", "viral coat that packages therapeutic payloads"],
+        "lentiviral_backbone": ["retrovirus-based delivery construct that inserts into host chromosomes",
+                                "scaffold of an engineered retrovirus with long terminal repeats"],
+        "crispr_cas9": ["programmable molecular scissors for precise cutting of chromosomes",
+                        "bacterial immune system repurposed to rewrite chromosomes"],
+        "human_mito": ["maternally inherited circular chromosome of the cell's powerhouse", "organelle chromosome passed down by mothers"],
+        "resistance_plasmid": ["circular accessory chromosome that lets microbes survive drugs",
+                               "small extrachromosomal ring conferring immunity to penicillin-type medicines"],
+        "bacteriophage": ["blueprint of a pathogen that preys on prokaryotes", "tailed particle that hijacks microbial hosts"],
+        "aav_rep": ["parvoviral machinery that copies the viral genome", "enzymes enabling duplication of small therapeutic viral chromosomes"],
+        "cas12a_cassette": ["staggered-cut RNA-guided endonuclease expression module", "alternative bacterial cutter for chromosome engineering"],
+        "lentiviral_gag": ["structural proteins and enzymes supplied in trans for retroviral particle assembly",
+                           "core-forming protein module of an immunodeficiency retrovirus"],
+        "rodent_mito": ["organelle chromosome from laboratory gnawers", "energy-organelle circular genetic material of small mammals"],
+        "phage_t4": ["contractile-tailed pathogen of gut bacteria with large blueprint",
+                     "icosahedral head and sheath assembly instructions of a classic viral model"],
+    },
+    "cell": {
+        "t_cell": ["thymus-matured leukocytes that recognize antigens via a TCR receptor", "lymph node soldiers educated in the thymus"],
+        "b_cell": ["bone marrow derived leukocytes that mature into humoral defenders",
+                   "immunoglobulin-presenting white corpuscles of humoral immunity"],
+        "monocyte": ["circulating phagocyte precursors of tissue macrophages", "large kidney-shaped leukocytes patrolling the bloodstream"],
+        "nk_cell": ["granule-armed sentinels that destroy infected or tumorous targets without prior sensitization",
+                    "perforin-wielding assassins of virus-infected targets"],
+        "hepatocyte": ["detoxifying organ workers that synthesize plasma proteins", "bile-producing metabolizers of toxins in the largest gland"],
+        "neuron": ["electrically excitable signaling units with axons and dendrites", "synapse-forming conductors of the central nervous system"],
+        "cardiomyocyte": ["contractile pump tissue units generating the pulse", "striated beating units of the ventricle"],
+        "hsc": ["multipotent precursors that regenerate every circulating lineage",
+                "self-renewing founders of the entire immune and erythroid system"],
+        "cd8_t_cell": ["MHC class I restricted effector leukocytes that eliminate infected targets",
+                       "granzyme-bearing thymus-derived hunters of virus-infected tissue"],
+        "macrophage": ["big eaters residing in organs that engulf debris and pathogens", "resident scavengers derived from blood-borne precursors"],
+        "plasma_cell": ["terminally differentiated factories pumping out protective proteins",
+                        "effector descendants of humoral lymphocytes devoted to export of defensive proteins"],
+        "cd4_t_cell": ["orchestrators that license other immune defenders through cytokines",
+                       "coordinating leukocytes bearing a coreceptor for MHC class II"],
+        "dendritic_cell": ["tree-like sentinels that display peptides to naive lymphocytes",
+                           "professional messengers bridging innate sensing and adaptive immunity"],
+        "memory_b_cell": ["veterans of past infections that respond rapidly on re-exposure",
+                          "durable antibody-lineage survivors poised for a secondary response"],
+    },
+}
+
 DEMO_QUESTIONS = [
     "Find wildfire burn scars near Malibu in 2025",
     "Show burned areas in the Angeles National Forest since 2025; also dense forest in the Angeles National Forest",
@@ -138,6 +200,29 @@ def resume_check(descs, model, stage, workers):
             "second_resume_items": second["items"]}
 
 
+def word_overlap(query, mod, cname):
+    """Content words a query shares with the training captions of its target class (empty for a true paraphrase)."""
+    def words(text):
+        return {t[1:] for t, _ in _tokens(text) if t.startswith("w")}  # strip the "w" word-token prefix
+    vocab = set()
+    for cap in synth.CAPTIONS[mod][cname] + synth.CAPTIONS[mod]["_mod"]:
+        vocab |= words(cap)
+    return sorted(words(query) & vocab)
+
+
+def quality(eng, queries, k=10):
+    """Mean precision@k of text queries against their target class, per modality and per class."""
+    cat, out = eng.cat, {}
+    for mod, classes in queries.items():
+        per = {}
+        for cname, qs in classes.items():
+            ci = synth.CLASSES[mod].index(cname)
+            per[cname] = float(np.mean([np.mean(cat["label"][[h["id"] for h in eng.search(s, modality=mod, k=k)["hits"]]] == ci)
+                                        for s in qs]))
+        out[mod] = {"mean_p@10": float(np.mean(list(per.values()))), "per_class": per}
+    return out
+
+
 def _git(*args):
     try:
         return subprocess.run(["git", *args], capture_output=True, text=True, timeout=10,
@@ -163,6 +248,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--items", type=int); ap.add_argument("--workers", type=int, default=2)
     ap.add_argument("--out"); ap.add_argument("--fresh", action="store_true")
+    ap.add_argument("--text-encoder", default="hashed", metavar="SPEC", help="hashed | model2vec | model2vec:<hugging-face id>")
     ap.add_argument("--ci", action="store_true", help="fast 65k-item subset; enforce CI_THRESHOLDS, exit 1 on failure")
     ap.add_argument("--results", help="output JSON (default results/bench.json, or results/bench_ci.json with --ci)")
     a = ap.parse_args()
@@ -173,10 +259,10 @@ def main():
     if a.fresh and os.path.exists(a.out):
         shutil.rmtree(a.out)
     os.makedirs(a.out, exist_ok=True); os.makedirs(os.path.dirname(a.results) or ".", exist_ok=True)
-    R = {"config": vars(a), "data_profile": synth.PROFILE, "environment": environment()}
+    R = {"config": vars(a), "text_encoder": a.text_encoder, "data_profile": synth.PROFILE, "environment": environment()}
     model, stage, index = f"{a.out}/model.npz", f"{a.out}/stage", f"{a.out}/index"
 
-    t = time.perf_counter(); PrismEncoder().fit().save(model); R["fit_s"] = time.perf_counter() - t
+    t = time.perf_counter(); PrismEncoder(a.text_encoder).fit().save(model); R["fit_s"] = time.perf_counter() - t
     descs = P.plan(a.items)
     R["ingest"] = P.ingest(descs, model, stage, workers=a.workers, every=100)
     _, R["build"] = P.build(stage, index); P.save_plan(index, descs)
@@ -197,26 +283,22 @@ def main():
     print("cold inspect:", R["inspect_cold"])
     cat = eng.cat
 
-    # --- cross-modal retrieval quality (held-out text -> each modality)
-    q: dict[str, Any] = {}
-    for mod, classes in HELDOUT.items():
-        per = {}
-        for cname, qs in classes.items():
-            ci = synth.CLASSES[mod].index(cname)
-            per[cname] = float(np.mean([np.mean(cat["label"][[h["id"] for h in eng.search(s, modality=mod, k=10)["hits"]]] == ci) for s in qs]))
-        q[mod] = {"mean_p@10": float(np.mean(list(per.values()))), "per_class": per}
-    R["text_to_modality_p@10"] = q
+    # --- cross-modal retrieval quality: held-out phrasings, and paraphrases with no word overlap
+    q = R["text_to_modality_p@10"] = quality(eng, HELDOUT)
+    R["paraphrase_p@10"] = quality(eng, PARAPHRASE)
+    print("heldout p@10    ", {m: round(v["mean_p@10"], 3) for m, v in q.items()})
+    print("paraphrase p@10 ", {m: round(v["mean_p@10"], 3) for m, v in R["paraphrase_p@10"].items()})
 
     # --- ANN recall + latency vs exact search on the staged float vectors
     print("loading staged vectors for exact baseline")
     files = sorted(f for f in os.listdir(stage) if f.endswith(".npz") and not f.endswith(".tmp.npz"))
-    V = np.empty((len(cat["mod"]), 256), np.float16)
+    V = np.empty((len(cat["mod"]), eng.ix.dim), np.float16)
     for f in files:
         z = np.load(f"{stage}/{f}"); V[z["ids"]] = z["vec"]
     rng = np.random.default_rng(1)
     nq = 100 if a.ci else 200
     qids = rng.choice(len(V), nq, replace=False)
-    Q = V[qids].astype(np.float32) + rng.normal(0, 0.05, (nq, 256)).astype(np.float32)
+    Q = V[qids].astype(np.float32) + rng.normal(0, 0.05, (nq, eng.ix.dim)).astype(np.float32)
     Q /= np.linalg.norm(Q, axis=1, keepdims=True)
     t = time.perf_counter()
     exact = np.zeros((len(Q), V.shape[0]), np.float32)

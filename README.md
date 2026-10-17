@@ -110,6 +110,39 @@ python bench.py --ci                       # 65k-item subset with pass/fail thre
 
 The recall test fails below recall@10 = 0.90 and warns below the 0.95 goal.
 
+## Text encoders: hashed words vs static embeddings
+
+The text side of the shared space is pluggable. The default `hashed` encoder (words + character n-grams) is
+dependency-free and instant but purely lexical. `model2vec` swaps in **static embeddings** — a token-embedding lookup
+plus mean pooling, no transformer — so a query can reach items it shares no words with.
+
+```bash
+pip install -e ".[embeddings]"            # adds model2vec (+ tokenizers, safetensors, huggingface_hub, ...)
+prism build --items 1000000 --workers 8 --out data-static --text-encoder model2vec
+# or pick a model: --text-encoder model2vec:minishlab/potion-base-8M   (default; 256-d, ~30 MB, fetched from the Hugging Face hub on first use)
+```
+
+The encoder is recorded in `model.npz`, so `ask` / `serve` pick it up automatically, and `build` refuses to mix encoders in one `--out` directory (vectors from different text spaces are not comparable).
+
+**Measured** (`python compare_encoders.py`: 131,072 items, identical data, fresh heads and index per encoder; results in `results/encoder_comparison.json`). Precision@10 against the true class:
+
+| Query set                                         | modality | hashed | static (potion-base-8M) |
+|---------------------------------------------------|----------|-------:|------------------------:|
+| **Paraphrases** — 76 queries, *zero* words shared with the target class's captions | sat  | 0.004 | **0.519** |
+|                                                   | dna      | 0.032  | **0.205**               |
+|                                                   | cell     | 0.089  | **0.339**               |
+| Held-out phrasings (some shared vocabulary)       | sat      | 0.819  | **0.865**               |
+|                                                   | dna      | **0.891** | 0.855                |
+|                                                   | cell     | **0.889** | 0.786                |
+| Query encode time (p50)                           |          | 0.04 ms | 0.05 ms                |
+
+- **What it buys.** Without shared words the hashed encoder is at or below chance (1/13, 1/11, 1/14 for random guessing); static embeddings recover 0.21–0.52. Averaged over the three modalities: 0.04 → 0.35. 29 of 38 classes improve, 4 tie, 5 get worse.
+- **What it costs.** On the held-out phrasings, which still share some vocabulary with the training captions, static embeddings are *worse* for DNA and cell queries (0.86 vs 0.89, 0.79 vs 0.89): exact tokens such as gene symbols (`CD3E`, `ALB`) are a strength of hashing, while a general-purpose static model splits them into sub-words. A hybrid (concatenating both embeddings) would likely keep both, at twice the vector size; it is not implemented.
+- **Caveats.** Absolute paraphrase scores are modest because the model is small and general-purpose, the captions are short, and the synthetic classes include deliberate near-duplicates (10% label noise). Paraphrase queries were written by hand for this benchmark (`bench.PARAPHRASE`) and are checked by `tests/test_encoders.py` to share no word with their class captions; 76 queries is a small sample, so per-class differences are noisy.
+- **Dependency footprint.** The extra install is `model2vec` and its dependencies (about two dozen packages in a fresh environment, including `tokenizers` and `huggingface_hub`), plus a ~30 MB model download; there is no PyTorch. The core install and CI gate remain numpy-only. `workflow_dispatch` runs the real-model tests and the comparison in CI.
+
+`python bench.py --text-encoder model2vec` runs the full benchmark with static embeddings; `results.paraphrase_p@10` is reported next to the held-out numbers for every run.
+
 ## Grounding and structured citations
 
 Every answer is checked by the harness. Cite items as `#<id>` or, better, `#<id>[field=value, ...]`, e.g. `#12[ndvi=0.42, region=malibu]`:
@@ -135,7 +168,7 @@ MIT licensed — see [LICENSE](LICENSE).
 ## Caveats
 
 - The data is synthetic. Each modality includes confusable sibling classes (e.g. wetland/water/forest, AAV capsid/Rep, CD4/CD8/T cells), 10% of items are generated from a sibling class while keeping their label, and sibling signal is blended into every item. That brings held-out precision to ~0.80–0.90 (v1: 0.95–0.98) — harder, but still easier than real data. The scale, latency and recall numbers are real measurements on this machine.
-- The text encoder is lexical (hashed words + char n-grams), so paraphrases with no shared vocabulary will miss. It sits behind one interface, so a sentence-embedding model drops in.
+- The default text encoder is lexical (hashed words + char n-grams), so paraphrases with no shared vocabulary miss; see the static-embedding option above for what it recovers and what it costs.
 - The Claude planner path is implemented but does not show a particular advantage, which may solely be due to the synthetic data itself.
 
 ## Path to production

@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:   # run the static-embedding comparison on demand (needs network for the model)
 
 jobs:
   test:
@@ -35,3 +36,30 @@ jobs:
           name: bench-ci-py${{ matrix.python-version }}
           path: bench_ci.json
           if-no-files-found: ignore
+
+  embeddings:
+    # Opt-in: downloads the static-embedding model from the Hugging Face hub, so it is not part of the PR gate.
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+          cache: pip
+      - name: Install with embeddings extra
+        run: python -m pip install -e ".[dev,embeddings]"
+      - name: Cache Hugging Face models
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/huggingface
+          key: hf-potion-base-8M
+      - name: Real-model tests
+        run: PRISM_TEST_EMBEDDINGS=1 pytest -q tests/test_encoders.py
+      - name: Hashed vs static comparison
+        run: python compare_encoders.py --items 65536 --results encoder_comparison.json
+      - name: Upload comparison
+        uses: actions/upload-artifact@v7
+        with:
+          name: encoder-comparison
+          path: encoder_comparison.json

@@ -134,7 +134,7 @@ def build(stage_dir, index_dir, n_shards=4, nlist=None, log=print):
     nlist = nlist or int(2 ** round(np.log2(max(64, 4 * np.sqrt(N)))))
     rng = np.random.default_rng(0)
     sample = np.concatenate([p["vec"][rng.random(len(p["vec"])) < min(1, 150_000 / N)] for p in parts]).astype(np.float32)
-    ix = ShardedIVF(n_shards=n_shards, nlist=nlist)
+    ix = ShardedIVF(dim=sample.shape[1], n_shards=n_shards, nlist=nlist)
     ix.train(sample)
     t1 = time.perf_counter()
     # columnar catalog, dense by id

@@ -1,0 +1,256 @@
+{
+ "items": 131072,
+ "data_profile": "v2",
+ "paraphrase_queries": 76,
+ "paraphrase_word_overlap": 0,
+ "environment": {
+  "machine": "arm64",
+  "platform": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+  "processor": "arm",
+  "cpu_count": 12,
+  "memory_bytes": 34359738368,
+  "python": "3.13.5",
+  "numpy": "2.5.4",
+  "git_commit": "61cb7c47bbf5e75104bd5cbe2841b83077019aad",
+  "git_dirty": true,
+  "timestamp_utc": "2026-10-17T23:49:32Z"
+ },
+ "encoders": {
+  "hashed": {
+   "text_encoder": "hashed",
+   "dim": 256,
+   "load_s": 0.015452999621629715,
+   "fit_s": 2.287419583182782,
+   "items": 131072,
+   "query_encode_p50_ms": 0.04035397432744503,
+   "heldout": {
+    "sat": {
+     "mean_p@10": 0.8192307692307694,
+     "per_class": {
+      "forest": 0.8500000000000001,
+      "water": 0.95,
+      "urban": 1.0,
+      "desert": 0.55,
+      "cropland": 0.95,
+      "burn_scar": 1.0,
+      "cloud": 1.0,
+      "wetland": 0.8500000000000001,
+      "shrubland": 0.75,
+      "recovering_burn": 0.8,
+      "grassland": 0.8,
+      "suburban": 0.65,
+      "salt_flat": 0.5
+     }
+    },
+    "dna": {
+     "mean_p@10": 0.890909090909091,
+     "per_class": {
+      "aav_capsid": 0.8,
+      "lentiviral_backbone": 0.9,
+      "crispr_cas9": 1.0,
+      "human_mito": 0.65,
+      "resistance_plasmid": 1.0,
+      "bacteriophage": 0.95,
+      "aav_rep": 0.95,
+      "cas12a_cassette": 0.9,
+      "lentiviral_gag": 0.8500000000000001,
+      "rodent_mito": 0.9,
+      "phage_t4": 0.9
+     }
+    },
+    "cell": {
+     "mean_p@10": 0.8892857142857142,
+     "per_class": {
+      "t_cell": 0.6,
+      "b_cell": 0.55,
+      "monocyte": 0.7,
+      "nk_cell": 1.0,
+      "hepatocyte": 1.0,
+      "neuron": 1.0,
+      "cardiomyocyte": 1.0,
+      "hsc": 1.0,
+      "cd8_t_cell": 0.9,
+      "macrophage": 0.9,
+      "plasma_cell": 0.95,
+      "cd4_t_cell": 0.95,
+      "dendritic_cell": 1.0,
+      "memory_b_cell": 0.9
+     }
+    }
+   },
+   "paraphrase": {
+    "sat": {
+     "mean_p@10": 0.0038461538461538464,
+     "per_class": {
+      "forest": 0.0,
+      "water": 0.0,
+      "urban": 0.0,
+      "desert": 0.0,
+      "cropland": 0.0,
+      "burn_scar": 0.0,
+      "cloud": 0.0,
+      "wetland": 0.0,
+      "shrubland": 0.0,
+      "recovering_burn": 0.0,
+      "grassland": 0.0,
+      "suburban": 0.0,
+      "salt_flat": 0.05
+     }
+    },
+    "dna": {
+     "mean_p@10": 0.031818181818181815,
+     "per_class": {
+      "aav_capsid": 0.1,
+      "lentiviral_backbone": 0.0,
+      "crispr_cas9": 0.1,
+      "human_mito": 0.0,
+      "resistance_plasmid": 0.0,
+      "bacteriophage": 0.0,
+      "aav_rep": 0.0,
+      "cas12a_cassette": 0.05,
+      "lentiviral_gag": 0.0,
+      "rodent_mito": 0.05,
+      "phage_t4": 0.05
+     }
+    },
+    "cell": {
+     "mean_p@10": 0.0892857142857143,
+     "per_class": {
+      "t_cell": 0.05,
+      "b_cell": 0.0,
+      "monocyte": 0.15000000000000002,
+      "nk_cell": 0.0,
+      "hepatocyte": 0.2,
+      "neuron": 0.0,
+      "cardiomyocyte": 0.35,
+      "hsc": 0.0,
+      "cd8_t_cell": 0.35,
+      "macrophage": 0.0,
+      "plasma_cell": 0.0,
+      "cd4_t_cell": 0.0,
+      "dendritic_cell": 0.1,
+      "memory_b_cell": 0.05
+     }
+    }
+   }
+  },
+  "model2vec": {
+   "text_encoder": "model2vec:minishlab/potion-base-8M",
+   "dim": 256,
+   "load_s": 0.5920586250722408,
+   "fit_s": 2.0497554587200284,
+   "items": 131072,
+   "query_encode_p50_ms": 0.0513540580868721,
+   "heldout": {
+    "sat": {
+     "mean_p@10": 0.8653846153846154,
+     "per_class": {
+      "forest": 0.45,
+      "water": 1.0,
+      "urban": 1.0,
+      "desert": 0.95,
+      "cropland": 0.8500000000000001,
+      "burn_scar": 0.9,
+      "cloud": 0.95,
+      "wetland": 0.9,
+      "shrubland": 0.75,
+      "recovering_burn": 0.9,
+      "grassland": 0.8500000000000001,
+      "suburban": 0.8500000000000001,
+      "salt_flat": 0.9
+     }
+    },
+    "dna": {
+     "mean_p@10": 0.8545454545454546,
+     "per_class": {
+      "aav_capsid": 0.95,
+      "lentiviral_backbone": 0.95,
+      "crispr_cas9": 0.5,
+      "human_mito": 0.95,
+      "resistance_plasmid": 1.0,
+      "bacteriophage": 0.6,
+      "aav_rep": 0.95,
+      "cas12a_cassette": 0.8,
+      "lentiviral_gag": 0.8,
+      "rodent_mito": 1.0,
+      "phage_t4": 0.9
+     }
+    },
+    "cell": {
+     "mean_p@10": 0.7857142857142858,
+     "per_class": {
+      "t_cell": 0.4,
+      "b_cell": 0.55,
+      "monocyte": 0.8,
+      "nk_cell": 0.95,
+      "hepatocyte": 0.85,
+      "neuron": 1.0,
+      "cardiomyocyte": 1.0,
+      "hsc": 1.0,
+      "cd8_t_cell": 0.9,
+      "macrophage": 0.45,
+      "plasma_cell": 0.75,
+      "cd4_t_cell": 0.5,
+      "dendritic_cell": 0.95,
+      "memory_b_cell": 0.9
+     }
+    }
+   },
+   "paraphrase": {
+    "sat": {
+     "mean_p@10": 0.5192307692307693,
+     "per_class": {
+      "forest": 0.0,
+      "water": 0.5,
+      "urban": 0.95,
+      "desert": 0.35,
+      "cropland": 0.9,
+      "burn_scar": 0.45,
+      "cloud": 0.4,
+      "wetland": 0.45,
+      "shrubland": 0.39999999999999997,
+      "recovering_burn": 0.5,
+      "grassland": 0.5,
+      "suburban": 0.45,
+      "salt_flat": 0.9
+     }
+    },
+    "dna": {
+     "mean_p@10": 0.20454545454545456,
+     "per_class": {
+      "aav_capsid": 0.0,
+      "lentiviral_backbone": 0.0,
+      "crispr_cas9": 0.35,
+      "human_mito": 0.8500000000000001,
+      "resistance_plasmid": 0.1,
+      "bacteriophage": 0.2,
+      "aav_rep": 0.05,
+      "cas12a_cassette": 0.2,
+      "lentiviral_gag": 0.0,
+      "rodent_mito": 0.35,
+      "phage_t4": 0.15
+     }
+    },
+    "cell": {
+     "mean_p@10": 0.3392857142857143,
+     "per_class": {
+      "t_cell": 0.6,
+      "b_cell": 0.44999999999999996,
+      "monocyte": 0.1,
+      "nk_cell": 0.5,
+      "hepatocyte": 0.0,
+      "neuron": 0.5,
+      "cardiomyocyte": 1.0,
+      "hsc": 0.5,
+      "cd8_t_cell": 0.1,
+      "macrophage": 0.0,
+      "plasma_cell": 0.25,
+      "cd4_t_cell": 0.65,
+      "dendritic_cell": 0.0,
+      "memory_b_cell": 0.1
+     }
+    }
+   }
+  }
+ }
+}

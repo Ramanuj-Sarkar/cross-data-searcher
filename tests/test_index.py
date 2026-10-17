@@ -15,13 +15,13 @@ RECALL_GOAL = 0.95    # warn below this
 def test_recall_at_10_regression():
     D, _, ENG = env()
     stage = f"{D}/stage"
-    V = np.empty((len(ENG.cat["mod"]), 256), np.float32)
+    V = np.empty((len(ENG.cat["mod"]), ENG.ix.dim), np.float32)
     for f in sorted(os.listdir(stage)):
         if f.endswith(".npz") and not f.endswith(".tmp.npz"):
             z = np.load(f"{stage}/{f}"); V[z["ids"]] = z["vec"]
     rng = np.random.default_rng(1)
     qids = rng.choice(len(V), 100, replace=False)
-    Q = V[qids] + rng.normal(0, 0.05, (100, 256)).astype(np.float32)
+    Q = V[qids] + rng.normal(0, 0.05, (100, ENG.ix.dim)).astype(np.float32)
     Q /= np.linalg.norm(Q, axis=1, keepdims=True)
     truth = np.argpartition(-(Q @ V.T), 9, axis=1)[:, :10]
     recalls = []

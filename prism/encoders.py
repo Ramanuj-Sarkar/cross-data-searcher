@@ -9,8 +9,9 @@ A linear head per modality is fit (closed-form ridge) to map native features ont
 the text embedding of paired captions, CLIP-style but solvable in seconds on a CPU.
 Text queries are embedded directly, so one query searches every modality.
 
-The text encoder is deliberately dependency-free (hashed words + char 4-grams).
-Swap `TextEncoder` for any sentence-embedding model; nothing else changes.
+The default text encoder is deliberately dependency-free (hashed words + char 4-grams).
+The text side is pluggable (`make_text_encoder`): hashed words by default, or static embeddings via
+the optional `model2vec` dependency; the choice is stored in model.npz so queries and index always agree.
 """
 from __future__ import annotations
 
@@ -45,6 +46,10 @@ def _tokens(text: str):
 
 
 class TextEncoder:
+    """Hashed words + char 4-grams: dependency-free and instant, but purely lexical (no synonyms)."""
+    name = "hashed"
+    dim = D
+
     def __init__(self, seed: int = 0):
         rng = np.random.default_rng(seed)
         self.R = (rng.standard_normal((TEXT_HASH_DIM, D)) / np.sqrt(D)).astype(np.float32)
@@ -55,6 +60,38 @@ class TextEncoder:
             for tok, w in _tokens(t):
                 X[r, zlib.crc32(tok.encode()) % TEXT_HASH_DIM] += w
         return l2n(l2n(X) @ self.R)
+
+
+DEFAULT_STATIC_MODEL = "minishlab/potion-base-8M"  # 256-d, ~30 MB, no transformer at query time
+
+
+class StaticTextEncoder:
+    """Static word embeddings (Model2Vec): a token-embedding lookup plus mean pooling. Understands synonyms and
+    paraphrases that share no words, at near-hashed speed. Needs `pip install 'prism-demo-searcher[embeddings]'`;
+    the model is fetched from the Hugging Face hub on first use."""
+
+    def __init__(self, model_name: str = DEFAULT_STATIC_MODEL):
+        try:
+            from model2vec import StaticModel
+        except ImportError as e:
+            raise ImportError("static embeddings need the optional dependency: "
+                              "pip install 'prism-demo-searcher[embeddings]'") from e
+        self.name = f"model2vec:{model_name}"
+        self.model = StaticModel.from_pretrained(model_name)
+        self.dim = int(self.model.dim)
+
+    def encode(self, texts):
+        return l2n(np.asarray(self.model.encode(list(texts)), np.float32))
+
+
+def make_text_encoder(spec: str = "hashed") -> TextEncoder | StaticTextEncoder:
+    """spec: 'hashed' | 'model2vec' (default static model) | 'model2vec:<hugging-face model id>'."""
+    kind, _, arg = spec.partition(":")
+    if kind == "hashed" and not arg:
+        return TextEncoder()
+    if kind == "model2vec":
+        return StaticTextEncoder(arg or DEFAULT_STATIC_MODEL)
+    raise ValueError(f"unknown text encoder '{spec}' (use hashed, model2vec or model2vec:<model id>)")
 
 
 # ----------------------------------------------------------------------------- native featurizers
@@ -117,9 +154,24 @@ FEATURIZERS = {"sat": sat_features, "dna": dna_features, "cell": cell_features}
 class PrismEncoder:
     """Per-modality standardize -> ridge head -> shared space (L2-normalized)."""
 
-    def __init__(self, text_seed=0):
-        self.text = TextEncoder(text_seed)
-        self.heads = {}  # mod -> (mu, sd, W)
+    def __init__(self, text_encoder: str = "hashed"):
+        self.text_spec = text_encoder
+        self._text: TextEncoder | StaticTextEncoder | None = None  # built on first use: ingest workers only need the heads
+        self.heads: dict[str, tuple[np.ndarray, np.ndarray, np.ndarray]] = {}  # mod -> (mu, sd, W)
+
+    @property
+    def text(self):
+        if self._text is None:
+            self._text = make_text_encoder(self.text_spec)
+            self.text_spec = self._text.name
+        return self._text
+
+    @property
+    def dim(self):
+        """Width of the shared space (= the text encoder's embedding size)."""
+        if self.heads:
+            return next(iter(self.heads.values()))[2].shape[1]
+        return self.text.dim
 
     def fit(self, n_per_class=400, alpha=1.0, seed=123, log=print):
         for mod in synth.MODALITIES:
@@ -156,11 +208,12 @@ class PrismEncoder:
         arrs = {}
         for m, (mu, sd, W) in self.heads.items():
             arrs[f"{m}_mu"], arrs[f"{m}_sd"], arrs[f"{m}_W"] = mu, sd, W
-        np.savez(path, **arrs)
+        np.savez(path, text_encoder=np.array(self.text_spec), **arrs)  # type: ignore[arg-type]  # stubs reserve 'allow_pickle'
 
     @classmethod
     def load(cls, path):
-        z = np.load(path); e = cls()
+        z = np.load(path)
+        e = cls(str(z["text_encoder"]) if "text_encoder" in z.files else "hashed")  # older files: hashed
         for m in synth.MODALITIES:
             e.heads[m] = (z[f"{m}_mu"], z[f"{m}_sd"], z[f"{m}_W"])
         return e

@@ -7,8 +7,10 @@ import argparse
 import json
 import os
 
+import numpy as np
+
 from . import pipeline as P
-from .encoders import PrismEncoder
+from .encoders import PrismEncoder, make_text_encoder
 
 
 def main():
@@ -17,6 +19,9 @@ def main():
     b = sub.add_parser("build"); b.add_argument("--items", type=int, default=200_000)
     b.add_argument("--workers", type=int, default=os.cpu_count()); b.add_argument("--shards", type=int, default=4)
     b.add_argument("--batch", type=int, default=1024)
+    b.add_argument("--text-encoder", default=None, metavar="SPEC",
+                   help="hashed (default) | model2vec | model2vec:<hugging-face id>; static embeddings need "
+                        "`pip install 'prism-demo-searcher[embeddings]'`")
     for p in (b, a := sub.add_parser("ask"), s := sub.add_parser("serve")):
         p.add_argument("--out", default="data")
     for p in (a, s):
@@ -30,8 +35,14 @@ def main():
 
     if args.cmd == "build":
         os.makedirs(args.out, exist_ok=True)
+        if os.path.exists(model) and args.text_encoder:
+            have = str(np.load(model)["text_encoder"]) if "text_encoder" in np.load(model).files else "hashed"
+            want = make_text_encoder(args.text_encoder).name  # normalizes e.g. 'model2vec' -> full id
+            if have != want:
+                raise SystemExit(f"{model} was fit with text encoder '{have}', not '{want}'. "
+                                 f"Use a different --out directory (or delete {args.out}) to switch encoders.")
         if not os.path.exists(model):
-            print("fitting modality encoders + alignment heads"); PrismEncoder().fit().save(model)
+            print("fitting modality encoders + alignment heads"); PrismEncoder(args.text_encoder or "hashed").fit().save(model)
         descs = P.plan(args.items, args.batch)
         print(json.dumps(P.ingest(descs, model, stage, workers=args.workers), indent=1))
         P.build(stage, index, n_shards=args.shards); P.save_plan(index, descs)
