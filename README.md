@@ -67,10 +67,10 @@ descriptors ──► worker pool: fetch → featurize → encode ──► stag
 ## Run
 
 ```bash
-pip install -e .                           
+pip install -e .                           # installs numpy and the `prism` command (use `-e ".[dev]"` for pytest + ruff)
 prism build --items 1000000 --workers 8 --out data
 prism ask --out data "Show burned areas in the Angeles National Forest since 2025"
-prism serve --out data --port 8080         
+prism serve --out data --port 8080         # binds to 127.0.0.1; see below to expose it
 ```
 
 `python -m prism ...` works identically. Requires Python 3.10+.
@@ -87,9 +87,9 @@ prism serve --out data --port 8080
 
 ```bash
 pip install -e ".[dev]"
-pytest -q                                  
+pytest -q                                  # unit, server, agent (mocked Claude API) and recall-regression tests
 ruff check .
-python bench.py --items 1000000 --workers 2   
+python bench.py --items 1000000 --workers 2   # end-to-end benchmark -> results/bench.json (includes machine + commit)
 ```
 
 The recall test fails below recall@10 = 0.90 and warns below the 0.95 goal.
