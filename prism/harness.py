@@ -97,9 +97,34 @@ class PolicyError(Exception):
     pass
 
 
+TRACE_KEEP = 30
+_TRACE_RX = re.compile(r"^[0-9a-f]{12}\.jsonl$")
+
+
+def prune_traces(trace_dir, keep=TRACE_KEEP):
+    """Retention: keep the `keep` most recently written run traces, delete the rest. Only files named like run
+    traces are considered, so anything else in the directory is left alone. Returns the number removed."""
+    runs = []
+    for f in os.scandir(trace_dir):
+        if _TRACE_RX.match(f.name):
+            try:
+                runs.append((f.stat().st_mtime, f.name))
+            except OSError:  # removed by a concurrent prune
+                pass
+    removed = 0
+    for _, name in sorted(runs, reverse=True)[keep:]:
+        try:
+            os.remove(os.path.join(trace_dir, name)); removed += 1
+        except OSError:
+            pass
+    return removed
+
+
 class Harness:
-    def __init__(self, eng: E.Engine, trace_dir="traces", max_steps=16, budget_s=60, allow=None):
+    def __init__(self, eng: E.Engine, trace_dir="traces", max_steps=16, budget_s=60, allow=None, keep_traces=TRACE_KEEP):
+        """keep_traces: retain only this many newest run traces in trace_dir (None disables pruning)."""
         self.eng, self.trace_dir, self.max_steps, self.budget_s = eng, trace_dir, max_steps, budget_s
+        self.keep_traces = keep_traces
         self.allow = set(allow or _SCHEMA)
         os.makedirs(trace_dir, exist_ok=True)
 
@@ -107,6 +132,8 @@ class Harness:
         self.run_id = uuid.uuid4().hex[:12]; self.t0 = time.perf_counter(); self.steps = 0
         self.seen_ids = set(); self.facts = {}; self.trace = open(f"{self.trace_dir}/{self.run_id}.jsonl", "w")
         self._log({"event": "start", "question": question})
+        if self.keep_traces:
+            prune_traces(self.trace_dir, self.keep_traces)
 
     def _log(self, rec):
         rec = {"run": self.run_id, "ts": round(time.perf_counter() - self.t0, 4), **rec}

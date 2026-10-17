@@ -115,6 +115,33 @@ def test_today_defaults_to_catalog_max_with_override():
     assert Engine(f"{D}/index", f"{D}/model.npz", today="2030-01-02").today == "2030-01-02"
 
 
+def test_trace_retention_keeps_newest_30():
+    import tempfile
+    d = tempfile.mkdtemp()
+    for n in range(40):  # run n was written n seconds after the epoch -> run 39 is newest
+        path = f"{d}/{n:012x}.jsonl"
+        open(path, "w").write("{}\n"); os.utime(path, (1_000 + n, 1_000 + n))
+    open(f"{d}/notes.txt", "w").write("not a trace")
+    open(f"{d}/{'0' * 12}.jsonl.bak", "w").write("not a trace either")
+    _, _, ENG = env()
+    h = H.Harness(ENG, trace_dir=d); h.start("t"); h.close()
+    runs = sorted(f for f in os.listdir(d) if H._TRACE_RX.match(f))
+    assert len(runs) == 30                                    # 29 old + the one just started
+    assert f"{39:012x}.jsonl" in runs and f"{11:012x}.jsonl" in runs and f"{10:012x}.jsonl" not in runs
+    assert os.path.exists(f"{d}/{h.run_id}.jsonl") and os.path.exists(f"{d}/notes.txt")
+    assert os.path.exists(f"{d}/{'0' * 12}.jsonl.bak")
+
+
+def test_trace_retention_can_be_disabled():
+    import tempfile
+    d = tempfile.mkdtemp()
+    for n in range(35):
+        open(f"{d}/{n:012x}.jsonl", "w").write("{}\n")
+    _, _, ENG = env()
+    h = H.Harness(ENG, trace_dir=d, keep_traces=None); h.start("t"); h.close()
+    assert len([f for f in os.listdir(d) if H._TRACE_RX.match(f)]) == 36
+
+
 def test_chunk_is_identical_to_the_same_slice_of_the_batch():
     for mod, gen in synth.GENERATORS.items():
         for n in (synth.CHUNK * 3, synth.CHUNK * 2 + 17):  # incl. a ragged final chunk

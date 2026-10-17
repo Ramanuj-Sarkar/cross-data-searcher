@@ -23,6 +23,7 @@ def main():
         p.add_argument("--today", help="override the planner's current date (YYYY-MM-DD); default: newest item in the index")
     a.add_argument("question"); s.add_argument("--port", type=int, default=8080)
     s.add_argument("--host", default="127.0.0.1", help="bind address (use 0.0.0.0 to expose; set --token)")
+    s.add_argument("--quiet", action="store_true", help="disable the JSON request log on stderr")
     s.add_argument("--token", default=os.environ.get("PRISM_TOKEN"), help="bearer token required for POST endpoints")
     args = ap.parse_args()
     model, stage, index = f"{args.out}/model.npz", f"{args.out}/stage", f"{args.out}/index"
@@ -44,7 +45,7 @@ def main():
         print(r["answer"]); print(f"\n[grounded={r['grounded']} steps={r['steps']} {r['total_ms']}ms trace={r['trace']}]")
     elif args.cmd == "serve":
         from .server import serve
-        serve(eng, host=args.host, port=args.port, trace_dir=f"{args.out}/traces", token=args.token)
+        serve(eng, host=args.host, port=args.port, trace_dir=f"{args.out}/traces", token=args.token, quiet=args.quiet)
     else:
         raise ValueError(f"unknown command: {args.cmd}")
 

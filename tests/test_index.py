@@ -34,6 +34,19 @@ def test_recall_at_10_regression():
         warnings.warn(f"recall@10 {recall:.3f} is below the {RECALL_GOAL} goal", stacklevel=2)
 
 
+def test_serial_and_threaded_search_agree():
+    D, _, ENG = env()
+    assert ENG.ix.pool is None  # serial is the default
+    threaded = ShardedIVF.load(f"{D}/index", threads=3)
+    assert threaded.pool is not None
+    qs = ENG.enc.encode_text(["burn scar", "hepatocyte albumin", "AAV capsid"])
+    for filters in (None, {"modality": [0]}, {"modality": [0], "time": (100, 600)}):
+        for q in qs:
+            a = ENG.ix.search(q, k=10, nprobe=32, filters=filters)
+            b = threaded.search(q, k=10, nprobe=32, filters=filters)
+            assert a[1][0].tolist() == b[1][0].tolist() and a[2] == b[2]
+
+
 def test_save_load_roundtrip_includes_extra_files():
     D, _, ENG = env()
     path = f"{D}/roundtrip"

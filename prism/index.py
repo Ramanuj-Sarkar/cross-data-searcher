@@ -3,8 +3,8 @@
 * Shared coarse quantizer (k-means centroids) across S shards; each shard keeps its
   vectors grouped by inverted list (CSR offsets), quantized to int8 with per-dim scale
   -> 4x smaller than float32, ~256 B/vector at d=256.
-* Query: score centroids once, fan out to shards on a thread pool (numpy releases the
-  GIL in matmul), merge top-k.
+* Query: score centroids once, scan the shards (serially by default; optional thread-pool
+  fan-out via threads=N), merge top-k.
 * Metadata filters (modality, bbox, time window) are applied on the candidate set;
   if a selective filter leaves < k hits, nprobe doubles adaptively (no silent recall loss).
 * Shards persist as plain .npy and reopen memory-mapped, so a node can serve an index
@@ -102,7 +102,9 @@ class ShardedIVF:
         self.scale = np.ones(dim, np.float32)
         self.shards: list[Shard] = []
         self._buf: list[list[tuple[np.ndarray, dict[str, np.ndarray]]]] = [[] for _ in range(n_shards)]
-        self.pool = ThreadPoolExecutor(threads or min(n_shards, os.cpu_count() or 2))
+        # Shards are scanned serially by default: for single queries thread hand-off and GIL contention cost more
+        # than they save (measured: equal when unfiltered, ~3.7x slower when filtered). Pass threads>1 to fan out.
+        self.pool = ThreadPoolExecutor(threads) if threads and threads > 1 else None
 
     # ---------------------------------------------------------------- build
     def train(self, sample):
@@ -148,7 +150,7 @@ class ShardedIVF:
                 qs = Q[qi] * self.scale
                 def run(sh, qs=qs, q=Q[qi], lists=lists):  # bound now: the lambda must not see later iterations
                     return sh.search(qs, q, lists, k, filt, rerank)
-                res = list(self.pool.map(run, self.shards))
+                res = [run(sh) for sh in self.shards] if self.pool is None else list(self.pool.map(run, self.shards))
                 s = np.concatenate([r[0] for r in res]); i = np.concatenate([r[1] for r in res])
                 scanned = sum(r[2] for r in res)
                 if len(s) >= k or not adaptive or npb >= self.nlist:
@@ -178,9 +180,9 @@ class ShardedIVF:
                 json.dump({"dim": self.dim, "n_shards": self.n_shards, "nlist": self.nlist, "n": len(self)}, fh)
 
     @classmethod
-    def load(cls, path, mmap=True):
+    def load(cls, path, mmap=True, threads=None):
         cfg = json.load(open(f"{path}/index.json"))
-        ix = cls(cfg["dim"], cfg["n_shards"], cfg["nlist"])
+        ix = cls(cfg["dim"], cfg["n_shards"], cfg["nlist"], threads=threads)
         ix.C = np.load(f"{path}/centroids.npy"); ix.scale = np.load(f"{path}/scale.npy")
         mm: Literal["r"] | None = "r" if mmap else None
         for si in range(cfg["n_shards"]):

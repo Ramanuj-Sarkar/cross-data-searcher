@@ -50,7 +50,7 @@ descriptors ──► worker pool: fetch → featurize → encode ──► stag
                                          │
                  shard 0..S  [int8 IVF lists | f16 rerank | ids, modality, lat, lon, t]  (mmap)
                                          │
- text / item query ─► centroid scores ─► thread-pool fan-out ─► filter ─► shortlist ─► f16 rerank ─► merge top-k
+ text / item query ─► centroid scores ─► shard scan ─► filter ─► shortlist ─► f16 rerank ─► merge top-k
                                          │
           Harness: schema validation · allowlist · step + time budget · JSONL trace · grounding check
                                          │
@@ -82,11 +82,21 @@ prism serve --out data --port 8080         # binds to 127.0.0.1; see below to ex
 
 **Optional: Claude as planner.** Set `ANTHROPIC_API_KEY` before `ask` / `serve` and Claude drives the tool loop instead of the deterministic rule planner (override the model with `PRISM_MODEL`). Without the key the offline rule planner is used.
 
-**Serving beyond localhost.** `prism serve --host 0.0.0.0 --token <secret>` (or `PRISM_TOKEN`) requires `Authorization: Bearer <secret>` on POST endpoints. Do not expose `/agent` without a token when an API key is set.
+**Serving beyond localhost.** `prism serve --host 0.0.0.0 --token <secret>` (or `PRISM_TOKEN`) requires `Authorization: Bearer <secret>` on POST endpoints and `/metrics`. Do not expose `/agent` without a token when an API key is set.
 
 **"Today".** The planner's current date is the newest item in the index; override with `--today YYYY-MM-DD` or `PRISM_TODAY`.
 
 **Rebuild after upgrading.** The synthetic classes and signal model changed (data profile v2), so an index built by an older version must be rebuilt.
+
+## Observability
+
+- **Structured logs.** `prism serve` writes one JSON object per request to stderr, e.g. `{"ts": "...", "level": "info", "event": "request", "method": "POST", "path": "/search", "status": 200, "ms": 1.9, "hits": 10, "scanned": 8212, "bytes_out": 4310, "client": "127.0.0.1"}`. Agent requests add `run`, `planner`, `grounded`, `steps`. Queries, questions and bodies are never logged; `path` is a bounded route name (`/item/{id}`, `other`). Unhandled errors log a traceback (`level: error`) while the client only sees `internal error`. Silence with `--quiet`.
+- **Metrics.** `GET /metrics` serves Prometheus text format: `prism_http_requests_total{method,route,status}`, `prism_http_request_duration_seconds` (histogram per route), `prism_http_inflight_requests`, `prism_agent_runs_total{planner,grounded}`, `prism_index_items`, `prism_up`, `prism_uptime_seconds`. It needs the bearer token when one is set.
+- **Trace retention.** Each agent run writes `traces/<run>.jsonl`; only the newest 30 are kept (`Harness(keep_traces=N)`, `None` disables).
+
+## Single-query search
+
+`ShardedIVF` scans its shards serially by default. For one query, thread fan-out only added overhead: equal latency unfiltered (1.5 ms) and ~3× slower p50 with modality/time filters (about 16–18 ms vs 5 ms on the 1M index, identical results). Pass `threads=N` to `ShardedIVF` / `ShardedIVF.load` to opt back in.
 
 ## Run Tests
 
@@ -113,6 +123,14 @@ The rule planner emits this format itself; the Claude planner is instructed to. 
 ## Continuous integration
 
 `.github/workflows/ci.yml` runs on every push to `main` and every pull request, on Python 3.10 and 3.13: `ruff check`, `pytest`, then `python bench.py --ci` — a ~15 s, 65k-item benchmark that fails the build if any threshold in `bench.CI_THRESHOLDS` is missed (recall@10 ≥ 0.90, per-modality precision@10 ≥ 0.75, search and ingest speed floors, 100% grounded agent answers with no contradicted claims, and the crash-resume checks). Results are uploaded as the `bench-ci-py<version>` artifact.
+
+## Contributing and license
+
+```bash
+pip install -e ".[dev]" && pre-commit install   # ruff, mypy and file hygiene run on each commit
+```
+
+MIT licensed — see [LICENSE](LICENSE).
 
 ## Caveats
 
