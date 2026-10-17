@@ -72,6 +72,26 @@ def test_place_words_do_not_leak_into_semantics():
     assert np.mean(ENG.cat["label"][[h["id"] for h in r["hits"]]] == synth.SAT_CLASSES.index("burn_scar")) >= 0.8
 
 
+def test_similar_rejects_bad_ids():
+    D, DESCS, ENG = env()
+    for bad in (-1, 10 ** 9, True, "5"):
+        try:
+            ENG.similar(bad)
+        except ValueError:
+            continue
+        raise AssertionError(f"accepted {bad!r}")
+
+
+def test_schema_edge_cases():
+    D, DESCS, ENG = env()
+    h = A.Harness(ENG, trace_dir=f"{D}/traces"); h.start("t")
+    assert "error" in h.call("search_corpus", {"query": "x", "k": 0})
+    assert "error" in h.call("inspect_item", {"item_id": True})
+    assert "error" in h.call("search_corpus", {"query": "x", "date_from": "not-a-date"})
+    assert "error" in h.call("aggregate", {"item_ids": [1, "a"]})
+    h.close()
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):

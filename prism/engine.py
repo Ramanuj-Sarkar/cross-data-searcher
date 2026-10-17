@@ -81,7 +81,16 @@ class Engine:
         q = self.enc.encode_text([semantic_part(query)])
         return self._search_vec(q, modality, k, place, bbox, date_from, date_to, nprobe)
 
+    def _check_id(self, item_id):
+        if isinstance(item_id, bool) or not isinstance(item_id, (int, np.integer)):
+            raise ValueError(f"item_id must be an integer, got {item_id!r}")
+        i = int(item_id)
+        if not (0 <= i < len(self.cat["mod"])) or self.cat["mod"][i] < 0 or self._shard[i] < 0:
+            raise ValueError(f"no item {item_id}")
+        return i
+
     def similar(self, item_id, modality=None, k=10, nprobe=32):
+        item_id = self._check_id(item_id)
         v = self.vector(item_id)
         hits = self._search_vec(v[None], modality, k + 1, None, None, None, None, nprobe)
         hits["hits"] = [h for h in hits["hits"] if h["id"] != item_id][:k]
@@ -121,9 +130,7 @@ class Engine:
         return d
 
     def inspect(self, item_id):
-        i = int(item_id)
-        if not (0 <= i < len(self.cat["mod"])) or self.cat["mod"][i] < 0:
-            raise ValueError(f"no item {item_id}")
+        i = self._check_id(item_id)
         d = self.card(i); raw = self.fetch_raw(i)
         if d["modality"] == "sat":
             d["band_means"] = {b: round(float(v), 3) for b, v in zip(synth.BANDS, raw.reshape(-1, 5).mean(0))}
@@ -137,7 +144,7 @@ class Engine:
         return d
 
     def aggregate(self, item_ids, group_by="region"):
-        ids = np.asarray([int(x) for x in item_ids], np.int64)
+        ids = np.asarray([self._check_id(x) for x in item_ids], np.int64)
         c = self.cat; groups = {}
         for i in ids:
             if group_by == "region":

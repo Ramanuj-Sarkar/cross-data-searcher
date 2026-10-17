@@ -19,6 +19,8 @@ def main():
     for p in (b, a := sub.add_parser("ask"), s := sub.add_parser("serve")):
         p.add_argument("--out", default="data")
     a.add_argument("question"); s.add_argument("--port", type=int, default=8080)
+    s.add_argument("--host", default="127.0.0.1", help="bind address (use 0.0.0.0 to expose; set --token)")
+    s.add_argument("--token", default=os.environ.get("PRISM_TOKEN"), help="bearer token required for POST endpoints")
     args = ap.parse_args()
     model, stage, index = f"{args.out}/model.npz", f"{args.out}/stage", f"{args.out}/index"
 
@@ -38,7 +40,7 @@ def main():
         print(r["answer"]); print(f"\n[grounded={r['grounded']} steps={r['steps']} {r['total_ms']}ms trace={r['trace']}]")
     elif args.cmd == "serve":
         from .server import serve
-        serve(eng, port=args.port, trace_dir=f"{args.out}/traces")
+        serve(eng, host=args.host, port=args.port, trace_dir=f"{args.out}/traces", token=args.token)
     else:
         raise ValueError(f"unknown command: {args.cmd}")
 

@@ -7,8 +7,8 @@
   POST /agent    {"question": "..."}
 """
 from __future__ import annotations
+import hmac
 import json
-import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from . import agent as A
 
@@ -60,8 +60,30 @@ $('#ask').onclick=async()=>{out.replaceChildren();meta.textContent='agent workin
 </script></body></html>"""
 
 
-def serve(eng, host="0.0.0.0", port=8080, trace_dir="traces"):
-    lock = threading.Lock()  # harness keeps per-run state; serialize agent runs
+MAX_BODY = 64 * 1024
+# Request fields accepted per endpoint, with caps so a client cannot request unbounded work.
+_SEARCH_FIELDS = {"query", "modality", "place", "date_from", "date_to", "k"}
+_SIMILAR_FIELDS = {"item_id", "modality", "k"}
+
+
+class BadRequest(Exception):
+    pass
+
+
+def _clean(b, allowed):
+    if not isinstance(b, dict):
+        raise BadRequest("body must be a JSON object")
+    extra = set(b) - allowed
+    if extra:
+        raise BadRequest(f"unexpected fields: {sorted(extra)}")
+    k = b.get("k", 10)
+    if isinstance(k, bool) or not isinstance(k, int) or not 1 <= k <= 100:
+        raise BadRequest("k must be an integer in 1..100")
+    return b
+
+
+def serve(eng, host="127.0.0.1", port=8080, trace_dir="traces", token=None):
+    """token: if set, POST endpoints require 'Authorization: Bearer <token>'. Binds to localhost by default."""
 
     class H(BaseHTTPRequestHandler):
         def _send(self, code, obj):
@@ -70,8 +92,22 @@ def serve(eng, host="0.0.0.0", port=8080, trace_dir="traces"):
             self.send_header("content-length", str(len(body))); self.end_headers(); self.wfile.write(body)
 
         def _body(self):
-            n = int(self.headers.get("content-length", 0))
-            return json.loads(self.rfile.read(n) or b"{}")
+            try:
+                n = int(self.headers.get("content-length", 0))
+            except ValueError:
+                raise BadRequest("bad content-length")
+            if n < 0 or n > MAX_BODY:
+                raise BadRequest("body too large")
+            try:
+                return json.loads(self.rfile.read(n) or b"{}")
+            except ValueError:
+                raise BadRequest("invalid JSON")
+
+        def _authorized(self):
+            if token is None:
+                return True
+            got = self.headers.get("authorization", "")
+            return hmac.compare_digest(got, f"Bearer {token}")
 
         def do_GET(self):
             try:
@@ -85,23 +121,32 @@ def serve(eng, host="0.0.0.0", port=8080, trace_dir="traces"):
                 if self.path.startswith("/item/"):
                     return self._send(200, eng.inspect(int(self.path.split("/")[-1])))
                 self._send(404, {"error": "not found"})
-            except Exception as e:
+            except (ValueError, KeyError, IndexError) as e:
                 self._send(400, {"error": str(e)})
+            except Exception:
+                self._send(500, {"error": "internal error"})
 
         def do_POST(self):
             try:
+                if not self._authorized():
+                    return self._send(401, {"error": "unauthorized"})
                 b = self._body()
                 if self.path == "/search":
-                    return self._send(200, eng.search(**b))
+                    return self._send(200, eng.search(**_clean(b, _SEARCH_FIELDS)))
                 if self.path == "/similar":
-                    return self._send(200, eng.similar(**b))
+                    return self._send(200, eng.similar(**_clean(b, _SIMILAR_FIELDS)))
                 if self.path == "/agent":
-                    with lock:
-                        h = A.Harness(eng, trace_dir=trace_dir)
-                        return self._send(200, A.default_planner().run(h, b["question"]))
+                    q = b.get("question") if isinstance(b, dict) else None
+                    if not isinstance(q, str) or not q.strip() or len(q) > 2000:
+                        raise BadRequest("question must be a non-empty string (max 2000 chars)")
+                    # Harness is created per request, so concurrent runs share no state.
+                    h = A.Harness(eng, trace_dir=trace_dir)
+                    return self._send(200, A.default_planner().run(h, q))
                 self._send(404, {"error": "not found"})
-            except Exception as e:
+            except (BadRequest, ValueError, KeyError, TypeError) as e:
                 self._send(400, {"error": str(e)})
+            except Exception:
+                self._send(500, {"error": "internal error"})
 
         def log_message(self, *a):
             pass

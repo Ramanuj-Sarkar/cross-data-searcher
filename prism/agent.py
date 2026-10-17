@@ -15,6 +15,7 @@ import json
 import os
 import re
 import time
+import urllib.error
 import urllib.request
 import uuid
 from . import engine as E
@@ -81,8 +82,21 @@ class Harness:
             spec = sch["properties"].get(k)
             if spec is None:
                 raise PolicyError(f"{name}: unexpected arg '{k}'")
-            if not isinstance(v, _PY[spec["type"]]):
+            if not isinstance(v, _PY[spec["type"]]) or (spec["type"] == "integer" and isinstance(v, bool)):
                 raise PolicyError(f"{name}.{k}: expected {spec['type']}")
+            if spec["type"] == "array":
+                item = spec.get("items", {}).get("type")
+                if item and not all(isinstance(x, _PY[item]) and not isinstance(x, bool) for x in v):
+                    raise PolicyError(f"{name}.{k}: items must be {item}")
+                if len(v) > 1000:
+                    raise PolicyError(f"{name}.{k}: too many items")
+            if k in ("date_from", "date_to"):
+                try:
+                    E.to_day(v)
+                except ValueError:
+                    raise PolicyError(f"{name}.{k}: expected YYYY-MM-DD")
+            if "minimum" in spec and v < spec["minimum"]:
+                raise PolicyError(f"{name}.{k}: min {spec['minimum']}")
             if "enum" in spec and v not in spec["enum"]:
                 raise PolicyError(f"{name}.{k}: must be one of {spec['enum']}")
             if "maximum" in spec and v > spec["maximum"]:
@@ -122,6 +136,12 @@ class Harness:
                 self.seen_ids.add(int(out["id"]))
             for h in out.get("hits", []):
                 self.seen_ids.add(int(h["id"]))
+
+    def close(self):
+        """Release the trace file; safe to call more than once (e.g. after a failed run)."""
+        trace = getattr(self, "trace", None)
+        if trace is not None and not trace.closed:
+            self._log({"event": "aborted"}); trace.close()
 
     def finish(self, answer):
         cited = {int(x) for x in re.findall(r"#(\d+)", answer)}
@@ -170,6 +190,12 @@ class RulePlanner:
 
     def run(self, h: Harness, question, k=8):
         h.start(question)
+        try:
+            return self._run(h, question, k)
+        finally:
+            h.close()
+
+    def _run(self, h: Harness, question, k):
         clauses = [c.strip() for c in re.split(r";|\band also\b|\band then\b|\bplus\b|\balso\b", question) if c.strip()]
         jobs = []
         for c in clauses:
@@ -239,11 +265,26 @@ class ClaudePlanner:
         req = urllib.request.Request("https://api.anthropic.com/v1/messages", data=json.dumps(body).encode(),
                                      headers={"x-api-key": self.key, "anthropic-version": "2023-06-01",
                                               "content-type": "application/json"})
-        with urllib.request.urlopen(req, timeout=60) as r:
-            return json.load(r)
+        for attempt in range(3):
+            try:
+                with urllib.request.urlopen(req, timeout=60) as r:
+                    return json.load(r)
+            except urllib.error.HTTPError as e:
+                if e.code not in (429, 500, 502, 503, 529) or attempt == 2:
+                    raise RuntimeError(f"Anthropic API error {e.code}") from None
+            except urllib.error.URLError as e:
+                if attempt == 2:
+                    raise RuntimeError(f"Anthropic API unreachable: {e.reason}") from None
+            time.sleep(2 ** attempt)
 
     def run(self, h: Harness, question):
         h.start(question)
+        try:
+            return self._run(h, question)
+        finally:
+            h.close()
+
+    def _run(self, h: Harness, question):
         msgs = [{"role": "user", "content": question}]
         while True:
             resp = self._post({"model": self.model, "max_tokens": 1500, "system": self.SYSTEM,
@@ -260,8 +301,20 @@ class ClaudePlanner:
                 except PolicyError as e:
                     return h.finish(f"[stopped by policy: {e}]")
                 results.append({"type": "tool_result", "tool_use_id": u["id"],
-                                "content": json.dumps(out, default=str)[:12000]})
+                                "is_error": isinstance(out, dict) and "error" in out,
+                                "content": _clip(out)})
             msgs.append({"role": "user", "content": results})
+
+
+def _clip(out, limit=12000):
+    """Serialize a tool result, dropping trailing hits (not bytes) so the JSON stays valid."""
+    blob = json.dumps(out, default=str)
+    if len(blob) <= limit or not isinstance(out, dict) or "hits" not in out:
+        return blob[:limit]
+    out = dict(out); hits = list(out["hits"])
+    while hits and len(json.dumps({**out, "hits": hits, "truncated": True}, default=str)) > limit:
+        hits.pop()
+    return json.dumps({**out, "hits": hits, "truncated": True}, default=str)
 
 
 def default_planner():
