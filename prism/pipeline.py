@@ -142,8 +142,7 @@ def build(stage_dir, index_dir, n_shards=4, nlist=None, log=print):
             cat[c][ids] = p[c]
     del parts
     ix.finalize()
-    ix.save(index_dir)
-    np.savez(f"{index_dir}/catalog.npz", **cat)
+    ix.save(index_dir, extra={"catalog.npz": cat})
     t2 = time.perf_counter()
     stats = {"n": N, "nlist": nlist, "n_shards": n_shards, "train_s": t1 - t0, "build_s": t2 - t1,
              "index_bytes_hot_int8": sum(os.path.getsize(os.path.join(dp, f)) for dp, _, fs in os.walk(index_dir)
@@ -158,5 +157,8 @@ def build(stage_dir, index_dir, n_shards=4, nlist=None, log=print):
 
 def save_plan(index_dir, descs):
     """Persist batch descriptors so any item can be re-fetched from source (provenance)."""
-    json.dump({"bs": descs[0]["bs"], "seed": (descs[0]["seed"]) // 1_000_003,
-               "mods": [d["mod"] for d in descs]}, open(f"{index_dir}/plan.json", "w"))
+    final = f"{index_dir}/plan.json"
+    with open(final + ".tmp", "w") as fh:
+        json.dump({"bs": descs[0]["bs"], "seed": (descs[0]["seed"]) // 1_000_003,
+                   "mods": [d["mod"] for d in descs]}, fh)
+    os.replace(final + ".tmp", final)

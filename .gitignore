@@ -4,3 +4,8 @@ __pycache__/
 traces/
 *.log
 *.egg-info
+*.egg-info/
+build/
+.pytest_cache/
+.ruff_cache/
+.venv/

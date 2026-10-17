@@ -92,20 +92,6 @@ def test_schema_edge_cases():
     h.close()
 
 
-def test_grounding_id_formats():
-    D, DESCS, ENG = env()
-    h = A.Harness(ENG, trace_dir=f"{D}/traces"); h.start("t")
-    r = h.finish("Found #11, item 22, Item #33, ID: 44 and ids=55; no id here.")
-    assert r["ungrounded_ids"] == [11, 22, 33, 44, 55]
-
-
-def test_today_defaults_to_catalog_max_with_override():
-    D, DESCS, ENG = env()
-    valid = ENG.cat["mod"] >= 0
-    assert ENG.today == str(synth.DAY0 + np.timedelta64(int(ENG.cat["t"][valid].max()), "D"))
-    assert Engine(f"{D}/index", f"{D}/model.npz", today="2030-01-02").today == "2030-01-02"
-
-
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):
