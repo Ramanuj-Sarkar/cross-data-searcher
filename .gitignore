@@ -3,3 +3,8 @@ data/
 __pycache__/
 traces/
 *.log
+*.egg-info/
+build/
+.pytest_cache/
+.ruff_cache/
+.venv/

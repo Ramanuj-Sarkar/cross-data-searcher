@@ -5,10 +5,22 @@
   "out": "data",
   "fresh": false
  },
- "fit_s": 1.2316135000437498,
+ "environment": {
+  "machine": "arm64",
+  "platform": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+  "processor": "arm",
+  "cpu_count": 12,
+  "memory_bytes": 34359738368,
+  "python": "3.13.5",
+  "numpy": "2.5.4",
+  "git_commit": "9a90bc5ae08750774469ede232c7f99e12b39dbe",
+  "git_dirty": true,
+  "timestamp_utc": "2026-10-17T22:19:52Z"
+ },
+ "fit_s": 1.7508617923595011,
  "ingest": {
   "items": 0,
-  "seconds": 0.004753374960273504,
+  "seconds": 0.005532125011086464,
   "items_per_s": 0.0,
   "per_modality": {},
   "batch_latency_p50_ms": null,
@@ -19,14 +31,14 @@
   "n": 999424,
   "nlist": 4096,
   "n_shards": 4,
-  "train_s": 13.379779458977282,
-  "build_s": 3.9588432908058167,
-  "index_bytes_hot_int8": 281177960,
+  "train_s": 13.351254458073527,
+  "build_s": 3.96549720922485,
+  "index_bytes_hot_int8": 281170775,
   "index_bytes_rerank_f16": 511705600
  },
  "text_to_modality_p@10": {
   "sat": {
-   "mean_p@10": 1.0,
+   "mean_p@10": 0.7,
    "per_class": {
     "forest": 1.0,
     "water": 1.0,
@@ -34,22 +46,27 @@
     "desert": 1.0,
     "cropland": 1.0,
     "burn_scar": 1.0,
-    "cloud": 1.0
+    "cloud": 1.0,
+    "wetland": 0.0,
+    "shrubland": 0.0,
+    "recovering_burn": 0.0
    }
   },
   "dna": {
-   "mean_p@10": 1.0,
+   "mean_p@10": 0.75,
    "per_class": {
     "aav_capsid": 1.0,
     "lentiviral_backbone": 1.0,
     "crispr_cas9": 1.0,
     "human_mito": 1.0,
     "resistance_plasmid": 1.0,
-    "bacteriophage": 1.0
+    "bacteriophage": 1.0,
+    "aav_rep": 0.0,
+    "cas12a_cassette": 0.0
    }
   },
   "cell": {
-   "mean_p@10": 0.99375,
+   "mean_p@10": 0.7227272727272728,
    "per_class": {
     "t_cell": 1.0,
     "b_cell": 1.0,
@@ -58,106 +75,109 @@
     "hepatocyte": 0.95,
     "neuron": 1.0,
     "cardiomyocyte": 1.0,
-    "hsc": 1.0
+    "hsc": 1.0,
+    "cd8_t_cell": 0.0,
+    "macrophage": 0.0,
+    "plasma_cell": 0.0
    }
   }
  },
  "ann": {
-  "brute_force_ms_per_query": 9.780987079720944,
+  "brute_force_ms_per_query": 10.712082500103861,
   "sweep": [
    {
     "nprobe": 16,
     "rerank": 1,
     "recall@10": 0.696,
-    "p50_ms": 1.1061248369514942,
-    "p99_ms": 5.5455015553161475,
-    "qps_1thread_client": 729.2806790439632,
+    "p50_ms": 0.8756869938224554,
+    "p99_ms": 2.608729070052503,
+    "qps_1thread_client": 956.9366401031658,
     "frac_scanned": 0.005079926037397541
    },
    {
     "nprobe": 64,
     "rerank": 1,
     "recall@10": 0.7544999999999998,
-    "p50_ms": 2.4119785521179438,
-    "p99_ms": 3.777854270301759,
-    "qps_1thread_client": 402.65040445392674,
+    "p50_ms": 2.5061459746211767,
+    "p99_ms": 3.4683210169896475,
+    "qps_1thread_client": 393.5787227658678,
     "frac_scanned": 0.020495805584016393
    },
    {
     "nprobe": 4,
     "rerank": 8,
     "recall@10": 0.68,
-    "p50_ms": 1.2407917529344559,
-    "p99_ms": 2.299286355264485,
-    "qps_1thread_client": 776.0990717180887,
+    "p50_ms": 1.3407710939645767,
+    "p99_ms": 2.73535878863185,
+    "qps_1thread_client": 720.4702821619129,
     "frac_scanned": 0.001319760181864754
    },
    {
     "nprobe": 8,
     "rerank": 8,
     "recall@10": 0.807,
-    "p50_ms": 1.009937608614564,
-    "p99_ms": 1.774864410981536,
-    "qps_1thread_client": 939.1912477957703,
+    "p50_ms": 1.098749926313758,
+    "p99_ms": 2.015775125473737,
+    "qps_1thread_client": 902.2899621353392,
     "frac_scanned": 0.002412389536372951
    },
    {
     "nprobe": 16,
     "rerank": 8,
     "recall@10": 0.9010000000000001,
-    "p50_ms": 1.254416536539793,
-    "p99_ms": 2.2804199811071153,
-    "qps_1thread_client": 781.7150069287687,
+    "p50_ms": 1.3292708899825811,
+    "p99_ms": 2.6438351767137624,
+    "qps_1thread_client": 732.9604946234608,
     "frac_scanned": 0.005079926037397541
    },
    {
     "nprobe": 32,
     "rerank": 8,
     "recall@10": 0.9545,
-    "p50_ms": 1.5730003360658884,
-    "p99_ms": 2.493843287229538,
-    "qps_1thread_client": 615.8363863827917,
+    "p50_ms": 1.671875361353159,
+    "p99_ms": 2.601148742251098,
+    "qps_1thread_client": 583.1588948778624,
     "frac_scanned": 0.010820232453893443
    },
    {
     "nprobe": 64,
     "rerank": 8,
     "recall@10": 0.9745,
-    "p50_ms": 2.5642705149948597,
-    "p99_ms": 3.2473256438970566,
-    "qps_1thread_client": 385.8018173126833,
+    "p50_ms": 2.6782506611198187,
+    "p99_ms": 3.564906259998678,
+    "qps_1thread_client": 369.0590963982628,
     "frac_scanned": 0.020495805584016393
    }
   ]
  },
- "filtered_search_p50_ms": 1.8753125332295895,
+ "filtered_search_p50_ms": 2.052437514066696,
  "agent": [
   {
-   "run_id": "bb6e7d76cece",
-   "answer": "**Satellite** \u2014 \u201cFind wildfire burn scars near Malibu in 2025\u201d \u00b7 filters {'place': 'malibu', 'date_from': '2025-01-01', 'date_to': '2025-12-31'} \u00b7 probed 32 lists / scanned 1,259 vectors\nTop hits: #501009 (malibu, 2025-09-08, NDVI 0.361, NBR -0.332, score 0.5641); #846049 (malibu, 2025-09-15, NDVI 0.346, NBR -0.348, score 0.5639); #396038 (malibu, 2025-01-24, NDVI 0.353, NBR -0.343, score 0.5637); #723874 (malibu, 2025-08-10, NDVI 0.356, NBR -0.309, score 0.5637); #679605 (malibu, 2025-06-08, NDVI 0.366, NBR -0.328, score 0.5635)\nInspected #501009: bands {'B': 0.041, 'G': 0.055, 'R': 0.048, 'NIR': 0.141, 'SWIR': 0.244} \u2192 s3://prism-demo/sat/batch-000489/item-0273\nInspected #846049: bands {'B': 0.044, 'G': 0.061, 'R': 0.052, 'NIR': 0.148, 'SWIR': 0.259} \u2192 s3://prism-demo/sat/batch-000826/item-0225\nBy region: malibu: 8 (mean NBR -0.334)",
+   "run_id": "0de3a58ff9c3",
+   "answer": "**Satellite** \u2014 \u201cFind wildfire burn scars near Malibu in 2025\u201d \u00b7 filters {'place': 'malibu', 'date_from': '2025-01-01', 'date_to': '2025-12-31'} \u00b7 probed 32 lists / scanned 1,259 vectors\nTop hits: #501009 (malibu, 2025-09-08, NDVI 0.361, NBR -0.332, score 0.5641); #846049 (malibu, 2025-09-15, NDVI 0.346, NBR -0.348, score 0.5639); #396038 (malibu, 2025-01-24, NDVI 0.353, NBR -0.343, score 0.5637); #723874 (malibu, 2025-08-10, NDVI 0.356, NBR -0.309, score 0.5637); #679605 (malibu, 2025-06-08, NDVI 0.366, NBR -0.328, score 0.5635)\nInspected #501009: bands {'B': 0.041, 'G': 0.065, 'R': 0.043, 'NIR': 0.232, 'SWIR': 0.079} \u2192 s3://prism-demo/sat/batch-000489/item-0273\nInspected #846049: bands {'B': 0.044, 'G': 0.068, 'R': 0.044, 'NIR': 0.213, 'SWIR': 0.069} \u2192 s3://prism-demo/sat/batch-000826/item-0225\nBy region: malibu: 8 (mean NBR -0.334)",
    "grounded": true,
    "ungrounded_ids": [],
    "steps": 4,
-   "total_ms": 157.6,
-   "trace": "results/traces/bb6e7d76cece.jsonl"
+   "total_ms": 146.5,
+   "trace": "results/traces/0de3a58ff9c3.jsonl"
   },
   {
-   "run_id": "175b11d15192",
-   "answer": "**Satellite** \u2014 \u201cShow burned areas in the Angeles National Forest since 2025\u201d \u00b7 filters {'place': 'angeles national forest', 'date_from': '2025-01-01'} \u00b7 probed 32 lists / scanned 2,156 vectors\nTop hits: #681419 (angeles national forest, 2025-06-09, NDVI 0.264, NBR -0.303, score 0.2676); #829608 (angeles national forest, 2026-03-17, NDVI 0.274, NBR -0.318, score 0.2671); #823713 (angeles national forest, 2026-07-09, NDVI 0.311, NBR -0.291, score 0.2668); #548810 (angeles national forest, 2025-04-05, NDVI 0.307, NBR -0.273, score 0.2665); #19366 (angeles national forest, 2025-01-22, NDVI 0.323, NBR -0.233, score 0.2662)\nInspected #681419: bands {'B': 0.054, 'G': 0.065, 'R': 0.075, 'NIR': 0.186, 'SWIR': 0.28} \u2192 s3://prism-demo/sat/batch-000665/item-0459\nInspected #829608: bands {'B': 0.057, 'G': 0.068, 'R': 0.077, 'NIR': 0.191, 'SWIR': 0.302} \u2192 s3://prism-demo/sat/batch-000810/item-0168\nBy region: angeles national forest: 8 (mean NBR -0.278)\n\n**Satellite** \u2014 \u201cdense forest in the Angeles National Forest\u201d \u00b7 filters {'place': 'angeles national forest'} \u00b7 probed 32 lists / scanned 5,732 vectors\nTop hits: #181583 (angeles national forest, 2026-02-13, NDVI 0.819, NBR 0.417, score 0.4104); #909208 (angeles national forest, 2026-02-02, NDVI 0.848, NBR 0.446, score 0.4102); #830388 (angeles national forest, 2025-06-21, NDVI 0.788, NBR 0.405, score 0.4098); #476817 (angeles national forest, 2025-09-18, NDVI 0.804, NBR 0.424, score 0.4098); #317671 (angeles national forest, 2024-05-24, NDVI 0.848, NBR 0.464, score 0.4094)\nInspected #181583: bands {'B': 0.051, 'G': 0.093, 'R': 0.049, 'NIR': 0.495, 'SWIR': 0.204} \u2192 s3://prism-demo/sat/batch-000177/item-0335\nInspected #909208: bands {'B': 0.042, 'G': 0.093, 'R': 0.045, 'NIR': 0.548, 'SWIR': 0.21} \u2192 s3://prism-demo/sat/batch-000887/item-0920\nBy region: angeles national forest: 8 (mean NBR 0.42)",
+   "run_id": "4b37b9ee1198",
+   "answer": "**Satellite** \u2014 \u201cShow burned areas in the Angeles National Forest since 2025\u201d \u00b7 filters {'place': 'angeles national forest', 'date_from': '2025-01-01'} \u00b7 probed 32 lists / scanned 2,156 vectors\nTop hits: #681419 (angeles national forest, 2025-06-09, NDVI 0.264, NBR -0.303, score 0.2676); #829608 (angeles national forest, 2026-03-17, NDVI 0.274, NBR -0.318, score 0.2671); #823713 (angeles national forest, 2026-07-09, NDVI 0.311, NBR -0.291, score 0.2668); #548810 (angeles national forest, 2025-04-05, NDVI 0.307, NBR -0.273, score 0.2665); #19366 (angeles national forest, 2025-01-22, NDVI 0.323, NBR -0.233, score 0.2662)\nInspected #681419: bands {'B': 0.051, 'G': 0.081, 'R': 0.051, 'NIR': 0.259, 'SWIR': 0.089} \u2192 s3://prism-demo/sat/batch-000665/item-0459\nInspected #829608: bands {'B': 0.089, 'G': 0.13, 'R': 0.158, 'NIR': 0.296, 'SWIR': 0.273} \u2192 s3://prism-demo/sat/batch-000810/item-0168\nBy region: angeles national forest: 8 (mean NBR -0.278)\n\n**Satellite** \u2014 \u201cdense forest in the Angeles National Forest\u201d \u00b7 filters {'place': 'angeles national forest'} \u00b7 probed 32 lists / scanned 5,732 vectors\nTop hits: #181583 (angeles national forest, 2026-02-13, NDVI 0.819, NBR 0.417, score 0.4104); #909208 (angeles national forest, 2026-02-02, NDVI 0.848, NBR 0.446, score 0.4102); #830388 (angeles national forest, 2025-06-21, NDVI 0.788, NBR 0.405, score 0.4098); #476817 (angeles national forest, 2025-09-18, NDVI 0.804, NBR 0.424, score 0.4098); #317671 (angeles national forest, 2024-05-24, NDVI 0.848, NBR 0.464, score 0.4094)\nInspected #181583: bands {'B': 0.085, 'G': 0.08, 'R': 0.043, 'NIR': 0.022, 'SWIR': 0.01} \u2192 s3://prism-demo/sat/batch-000177/item-0335\nInspected #909208: bands {'B': 0.041, 'G': 0.083, 'R': 0.049, 'NIR': 0.462, 'SWIR': 0.174} \u2192 s3://prism-demo/sat/batch-000887/item-0920\nBy region: angeles national forest: 8 (mean NBR 0.42)",
    "grounded": true,
    "ungrounded_ids": [],
    "steps": 8,
-   "total_ms": 316.6,
-   "trace": "results/traces/175b11d15192.jsonl"
+   "total_ms": 297.1,
+   "trace": "results/traces/4b37b9ee1198.jsonl"
   },
   {
-   "run_id": "222cd638cd78",
-   "answer": "**DNA** \u2014 \u201cAAV capsid sequences for liver gene therapy\u201d \u00b7 probed 32 lists / scanned 7,964 vectors\nTop hits: #1694 (GC 0.453, 1000 bp, score 0.6168); #724813 (GC 0.462, 1000 bp, score 0.6128); #297034 (GC 0.457, 1000 bp, score 0.6121); #911275 (GC 0.44, 1000 bp, score 0.607); #763606 (GC 0.431, 1000 bp, score 0.6068)\nInspected #1694: TTTAAACGAACGCAAAACCAGAAATTGAGAATTCCACTTACCATAGTCATTTTGAAAATC\u2026 \u2192 s3://prism-demo/dna/batch-000001/item-0670\nInspected #724813: TAAACGATGCTTTGAAATGTAAAACCTCCTACTGAAGCTCCTGCCCATAGATAACCGATC\u2026 \u2192 s3://prism-demo/dna/batch-000707/item-0845\n\n**Single-cell** \u2014 \u201chepatocytes expressing ALB\u201d \u00b7 probed 32 lists / scanned 8,190 vectors\nTop hits: #205751 (top marker SERPINA1, 466 genes, score 0.6964); #135816 (top marker TTR, 777 genes, score 0.6897); #185143 (top marker SERPINA1, 1004 genes, score 0.6862); #277999 (top marker TTR, 456 genes, score 0.6685); #417722 (top marker APOA1, 908 genes, score 0.6663)\nInspected #205751: {'RBFOX3': 2.36, 'SERPINA1': 2.36, 'CD3E': 0.0, 'KIT': 0.0, 'CD34': 0.0} \u2192 s3://prism-demo/cell/batch-000200/item-0951\nInspected #135816: {'TTR': 2.77, 'ALB': 2.5, 'CD34': 2.13, 'SERPINA1': 1.55, 'APOA1': 1.55} \u2192 s3://prism-demo/cell/batch-000132/item-0648",
+   "run_id": "f74257220d99",
+   "answer": "**DNA** \u2014 \u201cAAV capsid sequences for liver gene therapy\u201d \u00b7 probed 32 lists / scanned 7,964 vectors\nTop hits: #1694 (GC 0.453, 1000 bp, score 0.6168); #724813 (GC 0.462, 1000 bp, score 0.6128); #297034 (GC 0.457, 1000 bp, score 0.6121); #911275 (GC 0.44, 1000 bp, score 0.607); #763606 (GC 0.431, 1000 bp, score 0.6068)\nInspected #1694: CAGAAGACTTTCACATTTGTAGGGGTGATAGTATATTCGATCCGGAACCGGCTGCTGCAG\u2026 \u2192 s3://prism-demo/dna/batch-000001/item-0670\nInspected #724813: GTCCACCCCTACTGTTTGCTTTTATCAATTGCTACTTCATGTATGTCACCTTACCAGACC\u2026 \u2192 s3://prism-demo/dna/batch-000707/item-0845\n\n**Single-cell** \u2014 \u201chepatocytes expressing ALB\u201d \u00b7 probed 32 lists / scanned 8,190 vectors\nTop hits: #205751 (top marker SERPINA1, 466 genes, score 0.6964); #135816 (top marker TTR, 777 genes, score 0.6897); #185143 (top marker SERPINA1, 1004 genes, score 0.6862); #277999 (top marker TTR, 456 genes, score 0.6685); #417722 (top marker APOA1, 908 genes, score 0.6663)\nInspected #205751: {'TNNT2': 3.49, 'GZMK': 2.45, 'MYL7': 2.45, 'MYH7': 1.84, 'ACTC1': 1.84} \u2192 s3://prism-demo/cell/batch-000200/item-0951\nInspected #135816: {'MYL7': 3.58, 'TNNT2': 2.63, 'MYH7': 1.54, 'IL7R': 1.04, 'ACTC1': 1.04} \u2192 s3://prism-demo/cell/batch-000132/item-0648",
    "grounded": true,
    "ungrounded_ids": [],
    "steps": 6,
-   "total_ms": 305.0,
-   "trace": "results/traces/222cd638cd78.jsonl"
+   "total_ms": 291.0,
+   "trace": "results/traces/f74257220d99.jsonl"
   }
  ]
 }

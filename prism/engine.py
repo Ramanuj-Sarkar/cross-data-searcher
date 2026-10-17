@@ -1,7 +1,6 @@
 """Query engine: encoder + sharded index + columnar catalog + raw re-fetch for provenance."""
 from __future__ import annotations
 import json
-import os
 import re
 from functools import lru_cache
 import numpy as np
@@ -22,6 +21,7 @@ PLACES = {
 _ALIASES = {"socal": "southern california", "la": "los angeles", "mojave desert": "mojave",
             "angeles forest": "angeles national forest", "anf": "angeles national forest"}
 _BY_AREA = sorted(PLACES, key=lambda p: (PLACES[p][1] - PLACES[p][0]) * (PLACES[p][3] - PLACES[p][2]))
+TODAY = np.datetime64("2026-10-17")
 
 
 _PLACE_RX = re.compile(r"\b(?:in|near|around|at|over)?\s*(?:the\s+)?(?:" +
@@ -62,19 +62,12 @@ def day_str(d):
 
 
 class Engine:
-    def __init__(self, index_dir, model_path, mmap=True, today=None):
+    def __init__(self, index_dir, model_path, mmap=True):
         self.enc = PrismEncoder.load(model_path)
         self.ix = ShardedIVF.load(index_dir, mmap=mmap)
         self.cat = dict(np.load(f"{index_dir}/catalog.npz"))
         self.plan = json.load(open(f"{index_dir}/plan.json"))
         n = len(self.cat["mod"])
-        # "Today" for the planner: explicit override, else PRISM_TODAY, else the newest item in the catalog.
-        override = today or os.environ.get("PRISM_TODAY")
-        if override:
-            self.today = str(np.datetime64(override, "D"))
-        else:
-            valid = self.cat["mod"] >= 0
-            self.today = day_str(self.cat["t"][valid].max()) if valid.any() else str(np.datetime64("today"))
         self._shard = np.full(n, -1, np.int16); self._pos = np.full(n, -1, np.int64)
         for si, sh in enumerate(self.ix.shards):
             ids = np.asarray(sh.meta["ids"])

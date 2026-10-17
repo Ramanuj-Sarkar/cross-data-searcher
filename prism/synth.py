@@ -12,7 +12,10 @@ import numpy as np
 # ----------------------------------------------------------------------------
 # Satellite: 5-band multispectral tiles (Blue, Green, Red, NIR, SWIR), 32x32
 # ----------------------------------------------------------------------------
-SAT_CLASSES = ["forest", "water", "urban", "desert", "cropland", "burn_scar", "cloud"]
+# The last three are deliberately confusable with earlier classes (wetland~water/forest, shrubland~desert/forest,
+# recovering_burn~burn_scar/forest): overlapping spectra and geography, so retrieval is not trivially separable.
+SAT_CLASSES = ["forest", "water", "urban", "desert", "cropland", "burn_scar", "cloud",
+               "wetland", "shrubland", "recovering_burn"]
 BANDS = ["B", "G", "R", "NIR", "SWIR"]
 TILE = 32
 _SPECTRA = {
@@ -23,6 +26,9 @@ _SPECTRA = {
     "cropland":  [0.06, 0.10, 0.08, 0.38, 0.22],
     "burn_scar": [0.05, 0.06, 0.07, 0.10, 0.28],
     "cloud":     [0.70, 0.70, 0.72, 0.70, 0.55],
+    "wetland":   [0.05, 0.08, 0.05, 0.28, 0.09],
+    "shrubland": [0.09, 0.14, 0.16, 0.32, 0.30],
+    "recovering_burn": [0.05, 0.07, 0.07, 0.22, 0.24],
 }
 _ROAD = np.array([0.10, 0.11, 0.12, 0.14, 0.20], np.float32)
 _SOIL = np.array([0.12, 0.16, 0.20, 0.25, 0.30], np.float32)
@@ -35,7 +41,28 @@ _GEO = {
     "cropland":  [(32.95, -115.55, 0.20)],                       # Imperial Valley
     "burn_scar": [(34.30, -118.10, 0.12), (34.06, -118.75, 0.06)],  # ANF, Malibu
     "cloud":     [(33.90, -117.50, 1.00)],
+    "wetland":   [(33.90, -118.55, 0.12), (34.40, -118.55, 0.08)],
+    "shrubland": [(34.45, -118.20, 0.30)],
+    "recovering_burn": [(34.30, -118.10, 0.12), (34.06, -118.75, 0.06)],
 }
+
+# Fraction of items whose content is drawn from a confusable class while keeping their declared label
+# (annotation noise). Applied only when labels are not supplied, so training data stays clean.
+LABEL_NOISE = 0.04
+_CONFUSABLE = {
+    "sat": [("water", "wetland"), ("forest", "shrubland"), ("desert", "shrubland"), ("burn_scar", "recovering_burn")],
+    "dna": [("aav_capsid", "aav_rep"), ("crispr_cas9", "cas12a_cassette")],
+    "cell": [("t_cell", "cd8_t_cell"), ("monocyte", "macrophage"), ("b_cell", "plasma_cell")],
+}
+
+
+def _content_labels(mod, labels, rng, classes):
+    """Labels used to synthesize content: mostly the declared ones, with LABEL_NOISE swapped for a confusable sibling."""
+    partner = np.full(len(classes), -1)
+    for a, b in _CONFUSABLE[mod]:
+        partner[classes.index(a)], partner[classes.index(b)] = classes.index(b), classes.index(a)
+    flip = (rng.random(len(labels)) < LABEL_NOISE) & (partner[labels] >= 0)
+    return np.where(flip, partner[labels], labels)
 DAY0 = np.datetime64("2024-01-01")
 N_DAYS = 1004  # through 2026-10-01
 
@@ -53,12 +80,14 @@ def _smooth(rng, n, grid, size=TILE):
 
 def gen_sat(n: int, seed: int, labels=None):
     rng = np.random.default_rng(seed)
+    gen = labels
     if labels is None:
         labels = rng.integers(0, len(SAT_CLASSES), n)
+        gen = _content_labels("sat", labels, rng, SAT_CLASSES)
     tiles = np.empty((n, TILE, TILE, 5), np.float32)
     lat = np.empty(n, np.float32); lon = np.empty(n, np.float32)
     for ci, cname in enumerate(SAT_CLASSES):
-        idx = np.flatnonzero(labels == ci)
+        idx = np.flatnonzero(gen == ci)
         m = len(idx)
         if m == 0:
             continue
@@ -76,10 +105,10 @@ def gen_sat(n: int, seed: int, labels=None):
             coord = np.where(rng.random(m)[:, None, None] < 0.5, np.mgrid[:TILE, :TILE][0][None], np.mgrid[:TILE, :TILE][1][None])
             bare = ((coord // period[:, None, None]) % 2 == 1)
             t = np.where(bare[..., None], _SOIL * (1 + 0.1 * tex[..., None]), t)
-        elif cname == "burn_scar":  # patchy remnants of forest
+        elif cname in ("burn_scar", "recovering_burn"):  # patchy remnants of forest (more regrowth when recovering)
             frac = _smooth(rng, m, 3)
             forest = np.array(_SPECTRA["forest"], np.float32)
-            t = np.where((frac > 0.45)[..., None], forest * (1 + 0.2 * tex[..., None]), t)
+            t = np.where((frac > (0.45 if cname == "burn_scar" else 0.0))[..., None], forest * (1 + 0.2 * tex[..., None]), t)
         elif cname == "cloud":  # partial cloud over random ground
             cov = (_smooth(rng, m, 3) + 1) / 2
             ground = np.array(_SPECTRA["urban"], np.float32)
@@ -101,10 +130,13 @@ def gen_sat(n: int, seed: int, labels=None):
 # ----------------------------------------------------------------------------
 # DNA: synthetic sequences from family-specific Markov chains + planted motifs
 # ----------------------------------------------------------------------------
+# aav_rep and cas12a_cassette share GC content and planted motifs with aav_capsid / crispr_cas9.
 DNA_CLASSES = ["aav_capsid", "lentiviral_backbone", "crispr_cas9", "human_mito",
-               "resistance_plasmid", "bacteriophage"]
+               "resistance_plasmid", "bacteriophage", "aav_rep", "cas12a_cassette"]
+_SHARES_MOTIFS = {"aav_rep": "aav_capsid", "cas12a_cassette": "crispr_cas9"}
 _GC = {"aav_capsid": 0.55, "lentiviral_backbone": 0.45, "crispr_cas9": 0.50,
-       "human_mito": 0.44, "resistance_plasmid": 0.52, "bacteriophage": 0.49}
+       "human_mito": 0.44, "resistance_plasmid": 0.52, "bacteriophage": 0.49,
+       "aav_rep": 0.55, "cas12a_cassette": 0.50}
 DNA_LEN = 1000
 _MOTIF_LEN = 24
 _FAM_CACHE: dict = {}
@@ -117,17 +149,21 @@ def _fam(name):
         p = np.array([(1 - gc) / 2, gc / 2, gc / 2, (1 - gc) / 2])
         T = np.stack([r.dirichlet(p * 25 + 0.5) for _ in range(4)])
         motifs = r.integers(0, 4, (5, _MOTIF_LEN)).astype(np.uint8)
+        if name in _SHARES_MOTIFS:  # 3 of 5 motifs inherited from the sibling family
+            motifs[:3] = _fam(_SHARES_MOTIFS[name])[2][:3]
         _FAM_CACHE[name] = (p, np.cumsum(T, 1), motifs)
     return _FAM_CACHE[name]
 
 
 def gen_dna(n: int, seed: int, labels=None):
     rng = np.random.default_rng(seed)
+    gen = labels
     if labels is None:
         labels = rng.integers(0, len(DNA_CLASSES), n)
+        gen = _content_labels("dna", labels, rng, DNA_CLASSES)
     seqs = np.empty((n, DNA_LEN), np.uint8)
     for ci, cname in enumerate(DNA_CLASSES):
-        idx = np.flatnonzero(labels == ci); m = len(idx)
+        idx = np.flatnonzero(gen == ci); m = len(idx)
         if m == 0:
             continue
         p, cT, motifs = _fam(cname)
@@ -159,8 +195,10 @@ def dna_to_str(codes) -> str:
 # ----------------------------------------------------------------------------
 # Single-cell RNA-seq: gamma-Poisson counts over 2000 genes, 8 cell types
 # ----------------------------------------------------------------------------
+# cd8_t_cell, macrophage and plasma_cell share markers and most of their expression program with t_cell, monocyte, b_cell.
 CELL_CLASSES = ["t_cell", "b_cell", "monocyte", "nk_cell", "hepatocyte", "neuron",
-                "cardiomyocyte", "hsc"]
+                "cardiomyocyte", "hsc", "cd8_t_cell", "macrophage", "plasma_cell"]
+_SIBLING = {"cd8_t_cell": "t_cell", "macrophage": "monocyte", "plasma_cell": "b_cell"}
 _MARKERS = {
     "t_cell": ["CD3E", "CD3D", "IL7R", "CD2"],
     "b_cell": ["CD19", "MS4A1", "CD79A", "CD79B"],
@@ -170,9 +208,12 @@ _MARKERS = {
     "neuron": ["SNAP25", "SYT1", "RBFOX3", "STMN2"],
     "cardiomyocyte": ["TNNT2", "MYH7", "ACTC1", "MYL7"],
     "hsc": ["CD34", "KIT", "PROM1", "THY1"],
+    "cd8_t_cell": ["CD3E", "CD8A", "CD8B", "GZMK"],
+    "macrophage": ["CD68", "CD14", "C1QA", "MSR1"],
+    "plasma_cell": ["CD79A", "MZB1", "JCHAIN", "SDC1"],
 }
 N_GENES = 2000
-MARKER_GENES = [g for c in CELL_CLASSES for g in _MARKERS[c]]
+MARKER_GENES = list(dict.fromkeys(g for c in CELL_CLASSES for g in _MARKERS[c]))  # shared markers listed once
 GENES = MARKER_GENES + [f"GENE{i:04d}" for i in range(N_GENES - len(MARKER_GENES))]
 _CELL_PROFILES = None
 
@@ -183,11 +224,15 @@ def _profiles():
         r = np.random.default_rng(7)
         mu = r.lognormal(-1, 1.5, N_GENES)
         mu[: len(MARKER_GENES)] = np.median(mu) * 0.3
-        P = []
+        P = []; progs = {}
+        pool = np.arange(len(MARKER_GENES), N_GENES)
         for ci, c in enumerate(CELL_CLASSES):
             mult = np.ones(N_GENES)
             mult[[GENES.index(g) for g in _MARKERS[c]]] = 40
-            prog = r.choice(np.arange(len(MARKER_GENES), N_GENES), 60, replace=False)
+            prog = r.choice(pool, 60, replace=False)
+            if c in _SIBLING:  # keep 45 of the sibling's 60 program genes
+                prog = np.concatenate([r.choice(progs[_SIBLING[c]], 45, replace=False), prog[:15]])
+            progs[c] = prog
             mult[prog] *= 4
             q = mu * mult
             P.append(q / q.sum())
@@ -197,9 +242,11 @@ def _profiles():
 
 def gen_cell(n: int, seed: int, labels=None):
     rng = np.random.default_rng(seed)
+    gen = labels
     if labels is None:
         labels = rng.integers(0, len(CELL_CLASSES), n)
-    P = _profiles()[labels]
+        gen = _content_labels("cell", labels, rng, CELL_CLASSES)
+    P = _profiles()[gen]
     lib = rng.lognormal(np.log(2500), 0.5, n)[:, None]
     rate = P * lib * rng.gamma(2.0, 0.5, P.shape)
     counts = rng.poisson(rate).astype(np.int32)
@@ -227,6 +274,13 @@ CAPTIONS = {
                      "cultivated agriculture parcels", "farm fields with crops", "row crops on farmland"],
         "burn_scar": ["wildfire burn scar", "charred burned area after fire", "fire damaged vegetation",
                       "post fire burn severity", "scorched land from a wildfire", "low NBR burned forest"],
+        "wetland": ["wetland marsh with standing water", "swampy vegetated shoreline", "marshland and wet vegetation",
+                    "seasonally flooded wetland", "riparian marsh near open water", "waterlogged vegetated land"],
+        "shrubland": ["shrubland with sparse bushes", "chaparral scrub on dry hillsides", "dry brush and low shrubs",
+                      "semi-arid shrub vegetation", "scrubland between desert and forest", "sparse woody shrubs"],
+        "recovering_burn": ["recovering burn area with regrowth", "regrowing vegetation after a wildfire",
+                            "old burn scar with green recovery", "post fire vegetation regrowth",
+                            "partially recovered burned hillside", "burned land recolonized by plants"],
         "cloud": ["cloud covered scene", "thick cloud cover obscuring ground", "bright white clouds",
                   "cloudy image with haze", "overcast sky occluding land", "cloud contamination"],
     },
@@ -243,6 +297,10 @@ CAPTIONS = {
         "resistance_plasmid": ["E. coli plasmid with antibiotic resistance", "ampicillin resistance plasmid",
                                "bacterial cloning vector", "beta-lactamase resistance gene plasmid",
                                "kanamycin resistance plasmid"],
+        "aav_rep": ["AAV Rep gene", "adeno-associated virus Rep replication protein", "AAV rep sequence for replication",
+                    "gene therapy AAV rep helper cassette", "recombinant AAV Rep78 and Rep52"],
+        "cas12a_cassette": ["Cas12a editing cassette", "Cpf1 nuclease CRISPR construct", "CRISPR Cas12a crRNA array",
+                            "genome editing with Cas12a", "Cas12a Cpf1 gene editing sequence"],
         "bacteriophage": ["bacteriophage genome", "lambda phage DNA", "phage that infects bacteria",
                           "viral phage sequence", "bacteriophage lytic genes"],
     },
@@ -263,6 +321,12 @@ CAPTIONS = {
                    "RBFOX3 positive neurons", "nerve cells from brain tissue"],
         "cardiomyocyte": ["cardiomyocyte", "heart muscle cell expressing TNNT2", "cardiac myocyte with MYH7",
                           "heart cardiomyocytes", "ACTC1 positive cardiac muscle cell"],
+        "cd8_t_cell": ["CD8 positive cytotoxic T cell", "CD8A and CD3E expressing T lymphocyte", "cytotoxic CD8 T cells",
+                       "GZMK CD8B T cells", "killer T lymphocyte"],
+        "macrophage": ["macrophage", "CD68 positive tissue macrophage", "C1QA macrophages",
+                       "myeloid macrophage expressing CD14", "phagocytic macrophage cell"],
+        "plasma_cell": ["plasma cell", "antibody secreting plasma cell", "MZB1 and JCHAIN plasma cells",
+                        "SDC1 positive plasma B cell", "immunoglobulin producing plasma cells"],
         "hsc": ["hematopoietic stem cell", "CD34 positive stem and progenitor cell", "HSC expressing KIT and PROM1",
                 "bone marrow stem cell", "blood stem progenitor cells"],
     },

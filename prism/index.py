@@ -13,11 +13,34 @@
 from __future__ import annotations
 import json
 import os
-import time
+import shutil
+from contextlib import contextmanager
 from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 
 META_COLS = ("ids", "mod", "lat", "lon", "t")
+
+
+@contextmanager
+def atomic_dir(path):
+    """Yield a scratch directory next to `path`; on success it replaces `path` in one rename.
+    A crash mid-write leaves the previous directory untouched (plus a stale '.tmp' to clean up)."""
+    path = os.path.normpath(path)
+    tmp, old = path + ".tmp", path + ".old"
+    for d in (tmp, old):
+        shutil.rmtree(d, ignore_errors=True)
+    os.makedirs(tmp)
+    try:
+        yield tmp
+        if os.path.exists(path):
+            os.rename(path, old)
+        os.rename(tmp, path)
+    except BaseException:
+        shutil.rmtree(tmp, ignore_errors=True)
+        if os.path.exists(old) and not os.path.exists(path):
+            os.rename(old, path)  # swap failed half-way: restore the previous index
+        raise
+    shutil.rmtree(old, ignore_errors=True)
 
 
 def kmeans(X, k, iters=12, seed=0, sample=200_000):
@@ -130,18 +153,22 @@ class ShardedIVF:
         return out_s, out_i, stats
 
     # ---------------------------------------------------------------- persistence
-    def save(self, path):
-        os.makedirs(path, exist_ok=True)
-        np.save(f"{path}/centroids.npy", self.C); np.save(f"{path}/scale.npy", self.scale)
-        for si, sh in enumerate(self.shards):
-            d = f"{path}/shard_{si:02d}"; os.makedirs(d, exist_ok=True)
-            np.save(f"{d}/q8.npy", sh.q8); np.save(f"{d}/offsets.npy", sh.offsets)
-            if sh.f16 is not None:
-                np.save(f"{d}/f16.npy", sh.f16)
-            for c in META_COLS:
-                np.save(f"{d}/{c}.npy", sh.meta[c])
-        json.dump({"dim": self.dim, "n_shards": self.n_shards, "nlist": self.nlist, "n": len(self)},
-                  open(f"{path}/index.json", "w"))
+    def save(self, path, extra=None):
+        """Atomically (re)write the index at `path`. `extra` maps file name -> dict of arrays, saved as
+        .npz inside the same directory so e.g. the catalog lands in the same atomic swap."""
+        with atomic_dir(path) as tmp:
+            np.save(f"{tmp}/centroids.npy", self.C); np.save(f"{tmp}/scale.npy", self.scale)
+            for si, sh in enumerate(self.shards):
+                d = f"{tmp}/shard_{si:02d}"; os.makedirs(d)
+                np.save(f"{d}/q8.npy", sh.q8); np.save(f"{d}/offsets.npy", sh.offsets)
+                if sh.f16 is not None:
+                    np.save(f"{d}/f16.npy", sh.f16)
+                for c in META_COLS:
+                    np.save(f"{d}/{c}.npy", sh.meta[c])
+            for name, arrays in (extra or {}).items():
+                np.savez(f"{tmp}/{name}", **arrays)
+            with open(f"{tmp}/index.json", "w") as fh:  # written last: marks the directory complete
+                json.dump({"dim": self.dim, "n_shards": self.n_shards, "nlist": self.nlist, "n": len(self)}, fh)
 
     @classmethod
     def load(cls, path, mmap=True):

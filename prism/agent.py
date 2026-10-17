@@ -52,10 +52,6 @@ _SCHEMA = {t["name"]: t["input_schema"] for t in TOOLS}
 _PY = {"string": str, "integer": int, "array": list}
 
 
-# Matches '#123', 'item 123', 'items #123', 'ID: 123', 'id=123' (case-insensitive).
-_CITE_RX = re.compile(r"(?:#|\b(?:item|id)s?\b[\s:=#]*)(\d+)", re.I)
-
-
 class PolicyError(Exception):
     pass
 
@@ -148,7 +144,7 @@ class Harness:
             self._log({"event": "aborted"}); trace.close()
 
     def finish(self, answer):
-        cited = {int(x) for x in _CITE_RX.findall(answer)}
+        cited = {int(x) for x in re.findall(r"#(\d+)", answer)}
         ungrounded = sorted(cited - self.seen_ids)
         rec = {"event": "finish", "answer": answer, "cited": sorted(cited), "ungrounded": ungrounded,
                "grounded": not ungrounded, "steps": self.steps,
@@ -187,6 +183,11 @@ def _place(text):
     return None
 
 
+def split_clauses(question):
+    """Split a multi-intent question on ';', 'and also', 'and then', 'plus', 'also'."""
+    return [c.strip() for c in re.split(r";|\band also\b|\band then\b|\bplus\b|\balso\b", question) if c.strip()]
+
+
 class RulePlanner:
     """Deterministic planner: split the question into modality clauses, search each with
     filters, inspect the strongest hits, aggregate geo results, then compose a cited answer."""
@@ -200,7 +201,7 @@ class RulePlanner:
             h.close()
 
     def _run(self, h: Harness, question, k):
-        clauses = [c.strip() for c in re.split(r";|\band also\b|\band then\b|\bplus\b|\balso\b", question) if c.strip()]
+        clauses = split_clauses(question)
         jobs = []
         for c in clauses:
             mods = [m for m, rx in _MOD_WORDS.items() if re.search(rx, c.lower())]
@@ -259,7 +260,7 @@ class ClaudePlanner:
     SYSTEM = ("You are an analyst agent over a multimodal corpus (satellite tiles, DNA sequences, single-cell "
               "transcriptomes). Use the tools to answer. Cite every item you mention as #<id>, and only cite ids "
               "returned by tools. Inspect items before making claims about their properties. Be concise. "
-              "Today is {today}.")
+              f"Today is {E.TODAY}.")
 
     def __init__(self, model=None, api_key=None):
         self.model = model or os.environ.get("PRISM_MODEL", "claude-sonnet-5-5")
@@ -291,7 +292,7 @@ class ClaudePlanner:
     def _run(self, h: Harness, question):
         msgs = [{"role": "user", "content": question}]
         while True:
-            resp = self._post({"model": self.model, "max_tokens": 1500, "system": self.SYSTEM.format(today=h.eng.today),
+            resp = self._post({"model": self.model, "max_tokens": 1500, "system": self.SYSTEM,
                                "tools": TOOLS, "messages": msgs})
             msgs.append({"role": "assistant", "content": resp["content"]})
             uses = [b for b in resp["content"] if b["type"] == "tool_use"]

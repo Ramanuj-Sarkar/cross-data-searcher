@@ -4,7 +4,9 @@
 import argparse
 import json
 import os
+import platform
 import shutil
+import subprocess
 import time
 import numpy as np
 from prism import pipeline as P, synth, agent as A
@@ -32,11 +34,40 @@ HELDOUT = {
              "neuron": ["brain neurons", "SNAP25 neurons"], "cardiomyocyte": ["heart muscle cells", "cardiac TNNT2 cells"],
              "hsc": ["CD34 stem cells", "hematopoietic progenitors"]},
 }
+HELDOUT["sat"].update({"wetland": ["marshes and swamps", "wet vegetated areas by the water"],
+                       "shrubland": ["chaparral and brush", "dry scrubland with low bushes"],
+                       "recovering_burn": ["land regrowing after a fire", "vegetation recovering on old burn scars"]})
+HELDOUT["dna"].update({"aav_rep": ["AAV Rep replication genes", "adeno-associated virus rep helper"],
+                       "cas12a_cassette": ["Cpf1 editing constructs", "Cas12a guide array"]})
+HELDOUT["cell"].update({"cd8_t_cell": ["cytotoxic CD8 T lymphocytes", "CD8A T cells"],
+                        "macrophage": ["tissue macrophages", "CD68 phagocytes"],
+                        "plasma_cell": ["antibody secreting cells", "MZB1 plasma cells"]})
 DEMO_QUESTIONS = [
     "Find wildfire burn scars near Malibu in 2025",
     "Show burned areas in the Angeles National Forest since 2025; also dense forest in the Angeles National Forest",
     "AAV capsid sequences for liver gene therapy; also hepatocytes expressing ALB",
 ]
+
+
+def _git(*args):
+    try:
+        return subprocess.run(["git", *args], capture_output=True, text=True, timeout=10,
+                              cwd=os.path.dirname(os.path.abspath(__file__))).stdout.strip() or None
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+
+def environment():
+    """Where and on what these numbers were measured."""
+    try:
+        mem = os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
+    except (ValueError, OSError, AttributeError):
+        mem = None
+    return {"machine": platform.machine(), "platform": platform.platform(), "processor": platform.processor() or None,
+            "cpu_count": os.cpu_count(), "memory_bytes": mem, "python": platform.python_version(),
+            "numpy": np.__version__, "git_commit": _git("rev-parse", "HEAD"),
+            "git_dirty": bool(_git("status", "--porcelain")),
+            "timestamp_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
 
 
 def main():
@@ -47,7 +78,7 @@ def main():
     if a.fresh and os.path.exists(a.out):
         shutil.rmtree(a.out)
     os.makedirs(a.out, exist_ok=True); os.makedirs("results", exist_ok=True)
-    R = {"config": vars(a)}
+    R = {"config": vars(a), "environment": environment()}
     model, stage, index = f"{a.out}/model.npz", f"{a.out}/stage", f"{a.out}/index"
 
     t = time.perf_counter(); PrismEncoder().fit().save(model); R["fit_s"] = time.perf_counter() - t
