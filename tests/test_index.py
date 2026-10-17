@@ -1,9 +1,11 @@
 """Index persistence and recall regression."""
 import os
 import warnings
+
 import numpy as np
 import pytest
 from test_core import env
+
 from prism.index import ShardedIVF, atomic_dir
 
 RECALL_FLOOR = 0.90   # hard failure below this
@@ -29,7 +31,7 @@ def test_recall_at_10_regression():
     recall = float(np.mean(recalls))
     assert recall >= RECALL_FLOOR, f"recall@10 {recall:.3f} fell below floor {RECALL_FLOOR}"
     if recall < RECALL_GOAL:
-        warnings.warn(f"recall@10 {recall:.3f} is below the {RECALL_GOAL} goal")
+        warnings.warn(f"recall@10 {recall:.3f} is below the {RECALL_GOAL} goal", stacklevel=2)
 
 
 def test_save_load_roundtrip_includes_extra_files():

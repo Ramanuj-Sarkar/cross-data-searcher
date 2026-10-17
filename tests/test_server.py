@@ -5,7 +5,9 @@ import threading
 import urllib.error
 import urllib.request
 from contextlib import contextmanager
+
 from test_core import env
+
 from prism import server
 
 

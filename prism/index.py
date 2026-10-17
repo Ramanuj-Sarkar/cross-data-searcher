@@ -11,11 +11,14 @@
   larger than RAM and shards can be placed on different machines unchanged.
 """
 from __future__ import annotations
+
 import json
 import os
 import shutil
-from contextlib import contextmanager
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
+from typing import Literal
+
 import numpy as np
 
 META_COLS = ("ids", "mod", "lat", "lon", "t")
@@ -95,8 +98,10 @@ class Shard:
 class ShardedIVF:
     def __init__(self, dim=256, n_shards=4, nlist=1024, threads=None, rerank_tier=True):
         self.dim, self.n_shards, self.nlist, self.rerank_tier = dim, n_shards, nlist, rerank_tier
-        self.C = None; self.scale = None; self.shards: list[Shard] = []
-        self._buf = [[] for _ in range(n_shards)]
+        self.C = np.empty((0, dim), np.float32)  # set by train() / load()
+        self.scale = np.ones(dim, np.float32)
+        self.shards: list[Shard] = []
+        self._buf: list[list[tuple[np.ndarray, dict[str, np.ndarray]]]] = [[] for _ in range(n_shards)]
         self.pool = ThreadPoolExecutor(threads or min(n_shards, os.cpu_count() or 2))
 
     # ---------------------------------------------------------------- build
@@ -141,7 +146,9 @@ class ShardedIVF:
             while True:
                 lists = np.argpartition(-cs[qi], npb - 1)[:npb]
                 qs = Q[qi] * self.scale
-                res = list(self.pool.map(lambda sh: sh.search(qs, Q[qi], lists, k, filt, rerank), self.shards))
+                def run(sh, qs=qs, q=Q[qi], lists=lists):  # bound now: the lambda must not see later iterations
+                    return sh.search(qs, q, lists, k, filt, rerank)
+                res = list(self.pool.map(run, self.shards))
                 s = np.concatenate([r[0] for r in res]); i = np.concatenate([r[1] for r in res])
                 scanned = sum(r[2] for r in res)
                 if len(s) >= k or not adaptive or npb >= self.nlist:
@@ -175,7 +182,7 @@ class ShardedIVF:
         cfg = json.load(open(f"{path}/index.json"))
         ix = cls(cfg["dim"], cfg["n_shards"], cfg["nlist"])
         ix.C = np.load(f"{path}/centroids.npy"); ix.scale = np.load(f"{path}/scale.npy")
-        mm = "r" if mmap else None
+        mm: Literal["r"] | None = "r" if mmap else None
         for si in range(cfg["n_shards"]):
             d = f"{path}/shard_{si:02d}"
             meta = {c: np.load(f"{d}/{c}.npy", mmap_mode=mm) for c in META_COLS}

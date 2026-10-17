@@ -1,10 +1,14 @@
 """Query engine: encoder + sharded index + columnar catalog + raw re-fetch for provenance."""
 from __future__ import annotations
+
 import json
 import os
 import re
 from functools import lru_cache
+from typing import Any
+
 import numpy as np
+
 from . import synth
 from .encoders import PrismEncoder
 from .index import ShardedIVF
@@ -54,7 +58,7 @@ def region_of(lat, lon):
 
 
 def to_day(s):
-    return int((np.datetime64(s) - synth.DAY0).astype(int))
+    return int((np.datetime64(s) - synth.DAY0) / np.timedelta64(1, "D"))
 
 
 def day_str(d):
@@ -104,7 +108,7 @@ class Engine:
         return hits
 
     def _search_vec(self, q, modality, k, place, bbox, date_from, date_to, nprobe):
-        filters = {}
+        filters: dict[str, Any] = {}
         if modality:
             mods = [modality] if isinstance(modality, str) else list(modality)
             filters["modality"] = [synth.MOD_CODE[m] for m in mods]
@@ -117,7 +121,7 @@ class Engine:
             filters["time"] = (to_day(date_from) if date_from else 0, to_day(date_to) if date_to else 10 ** 6)
         s, i, st = self.ix.search(q, k=min(int(k), 100), nprobe=nprobe, filters=filters or None)
         return {"filters": {k_: list(v) if isinstance(v, tuple) else v for k_, v in filters.items()},
-                "probe": st[0], "hits": [self.card(int(x), float(sc)) for x, sc in zip(i[0], s[0])]}
+                "probe": st[0], "hits": [self.card(int(x), float(sc)) for x, sc in zip(i[0], s[0], strict=True)]}
 
     def card(self, i, score=None):
         c = self.cat; mod = synth.MODALITIES[c["mod"][i]]
@@ -140,7 +144,7 @@ class Engine:
         i = self._check_id(item_id)
         d = self.card(i); raw = self.fetch_raw(i)
         if d["modality"] == "sat":
-            d["band_means"] = {b: round(float(v), 3) for b, v in zip(synth.BANDS, raw.reshape(-1, 5).mean(0))}
+            d["band_means"] = {b: round(float(v), 3) for b, v in zip(synth.BANDS, raw.reshape(-1, 5).mean(0), strict=True)}
             d["note"] = "NBR < 0.1 with SWIR > NIR is consistent with recent burn; NDVI > 0.5 dense vegetation"
         elif d["modality"] == "dna":
             d["sequence_head"] = synth.dna_to_str(raw[:60])
@@ -152,7 +156,7 @@ class Engine:
 
     def aggregate(self, item_ids, group_by="region"):
         ids = np.asarray([self._check_id(x) for x in item_ids], np.int64)
-        c = self.cat; groups = {}
+        c = self.cat; groups: dict[str, list] = {}
         for i in ids:
             if group_by == "region":
                 g = region_of(c["lat"][i], c["lon"][i]) or "n/a"
@@ -181,10 +185,13 @@ class Engine:
         return np.asarray(sh.q8[self._pos[i]], np.float32) * self.ix.scale
 
     def fetch_raw(self, i):
-        bs = self.plan["bs"]; b = i // bs
-        return _fetch_batch(self.plan["mods"][b], bs, self.plan["seed"] * 1_000_003 + b)[i % bs]
+        """Re-fetch one item from source: regenerates only its CHUNK-item chunk (a few ms), never the whole batch."""
+        bs = self.plan["bs"]; b, j = divmod(int(i), bs)
+        return _fetch_chunk(self.plan["mods"][b], bs, self.plan["seed"] * 1_000_003 + b, j // synth.CHUNK)[j % synth.CHUNK]
 
 
-@lru_cache(maxsize=16)
-def _fetch_batch(mod, n, seed):
-    return synth.GENERATORS[mod](n, seed)[0]
+@lru_cache(maxsize=32)  # bounded: 32 chunks is ~40 MB even for imagery
+def _fetch_chunk(mod, n, seed, c):
+    raw = synth.gen_chunk(mod, n, seed, c)[0]
+    raw.setflags(write=False)  # shared via the cache: callers must not mutate it
+    return raw

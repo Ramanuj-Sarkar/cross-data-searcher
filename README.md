@@ -4,7 +4,7 @@
 
 **What PRISM does.** It puts every data type — here satellite imagery, DNA sequences and single-cell RNA — into one searchable space, so a plain-language question searches all of them at once. An *auditable* agent composes the answer, and every claim is **grounding-checked**: any item it cites that the tools never actually returned gets flagged, and every step (query, latency, result hash) is logged. That provenance-and-audit layer is the headline — it's the host's own domain (an enterprise agentic harness) and the thing R&D teams can't get from grep across folders.
 
-**Measured.** On ~1M items and 2 ingest workers (Apple M-series laptop, 12 cores / 32 GB): ingest **16.7k items/s**, search **1.6 ms p50 at 0.996 recall@10**, 100% grounded agent answers.
+**Measured.** On ~1M items and 2 ingest workers (Apple M-series laptop, 12 cores / 32 GB): ingest **16.4k items/s**, search **1.6 ms p50 at 0.99 recall@10**, 100% grounded agent answers.
 
 **How it works (one paragraph).** Each data type gets a domain-aware featurizer: spectral indices (NDVI, NBR, NDWI) for imagery, k-mer spectra for DNA, normalized expression for cells. A closed-form ridge head per type aligns those features to the text embedding of paired descriptions — CLIP-style alignment that fits in ~2 seconds. Vectors land in a sharded IVF index with three tiers: int8 hot storage, a float16 rerank tier, and metadata filters, all memory-mapped. The data is synthetic but structurally realistic, and every item re-fetches from its batch descriptor for provenance.
 
@@ -14,17 +14,19 @@ Machine, Python/numpy versions, git commit and data profile are recorded under `
 
 | Stage                                                | v2 (current)                                                  | v1 baseline          |
 |------------------------------------------------------|---------------------------------------------------------------|----------------------|
-| Encoder fit (3 modalities)                           | 2.3 s                                                         | 3.1 s                |
-| Parallel ingest (fetch → featurize → encode → stage) | **16,731 items/s**, batch p95 182 ms, 2 workers               | 17,426 items/s       |
+| Encoder fit (3 modalities)                           | 2.4 s                                                         | 3.1 s                |
+| Parallel ingest (fetch → featurize → encode → stage) | **16,441 items/s**, batch p95 186 ms, 2 workers               | 17,426 items/s       |
 | Resume after simulated crash                         | 878/976 batches skipped, 98 recomputed in 6.3 s, byte-identical, 2nd resume = 0 items | not measured |
 | Index build (k-means 4096 lists, 4 shards)           | 17 s · hot int8 tier 268 MiB · f16 rerank tier 488 MiB (mmap) | 18 s                 |
-| ANN, nprobe 32 + rerank                              | **recall@10 0.996, p50 1.6 ms** (brute force: 10.0 ms)        | 0.988, 1.9 ms        |
-| ANN, nprobe 64 + rerank                              | recall@10 1.000, p50 2.6 ms, scans 1.8% of corpus             | 0.998, 2.9 ms        |
+| ANN, nprobe 32 + rerank                              | **recall@10 0.992, p50 1.6 ms** (brute force: 10.0 ms)        | 0.988, 1.9 ms        |
+| ANN, nprobe 64 + rerank                              | recall@10 0.999, p50 2.6 ms, scans 1.9% of corpus             | 0.998, 2.9 ms        |
 | Filtered search (modality + bbox + date)             | 2.0 ms p50                                                    | 2.2 ms               |
-| Held-out text → sat / dna / cell precision@10        | 0.812 / 0.891 / 0.914                                         | 0.945 / 0.975 / 0.982 |
-| Agent runs (3 multi-intent questions)                | 100% grounded, 80/80 claims verified, 4–8 tool calls, 0.14–0.31 s | 100% grounded, 4–8 calls |
+| Held-out text → sat / dna / cell precision@10        | 0.800 / 0.845 / 0.904                                         | 0.945 / 0.975 / 0.982 |
+| Agent runs (3 multi-intent questions)                | 100% grounded, 80/80 claims verified, 4–8 tool calls, 22–51 ms    | 100% grounded, 4–8 calls |
 
-The recall table shows why the rerank tier exists. Neighbours in dense clusters are near-ties, so int8 scoring alone caps recall at 0.83–0.86 (nprobe 16–64); the f16 rerank of an 8× shortlist lifts nprobe 16 to 0.96 and nprobe 32 to 0.996 for under 1 ms more.
+The recall table shows why the rerank tier exists. Neighbours in dense clusters are near-ties, so int8 scoring alone caps recall at 0.83–0.86 (nprobe 16–64); the f16 rerank of an 8× shortlist lifts nprobe 16 to 0.96 and nprobe 32 to 0.99 for under 1 ms more.
+
+**Cold inspect.** Items are generated in independent 128-item chunks (`synth.CHUNK`), so re-fetching one item for `inspect` regenerates only its chunk: 9 ms p50 (12 ms p99), against 77 ms to regenerate a 1024-item satellite batch. The chunk cache is bounded (32 chunks) and read-only.
 
 **Resume.** `bench.py` simulates a crash near the end of ingest (last 10% of batches deleted, manifest tail torn) and measures the resume: only the lost batches may be recomputed, they must equal the originals exactly, and a second resume must do nothing.
 
@@ -62,7 +64,8 @@ descriptors ──► worker pool: fetch → featurize → encode ──► stag
 | `prism/index.py`     | Sharded IVF, int8 + f16 tiers, filters, adaptive nprobe, mmap persistence                                                           |
 | `prism/pipeline.py`  | Parallel, resumable ingest; index build; columnar catalog                                                                           |
 | `prism/engine.py`    | Search, similar, inspect (re-fetch from source), aggregate; place gazetteer                                                         |
-| `prism/agent.py`     | Tool registry, policy harness, Claude and rule planners                                                                             |
+| `prism/harness.py`   | Tool registry, schema validation, policy budgets, JSONL trace, grounding + claim checks            |
+| `prism/planners.py`  | Rule planner (offline), Claude planner (Messages API), answer formatting                           |
 | `prism/server.py`    | `/search`, `/similar`, `/item/<id>`, `/agent` JSON API + `static/index.html` UI                                                                           |
 | `bench.py`, `tests/` | End-to-end benchmark (`results/bench.json`) and the test suite                                                                           |
 
@@ -113,7 +116,7 @@ The rule planner emits this format itself; the Claude planner is instructed to. 
 
 ## Caveats
 
-- The data is synthetic. Each modality includes confusable sibling classes (e.g. wetland/water/forest, AAV capsid/Rep, CD4/CD8/T cells), 10% of items are generated from a sibling class while keeping their label, and sibling signal is blended into every item. That brings held-out precision to ~0.81–0.91 (v1: 0.95–0.98) — harder, but still easier than real data. The scale, latency and recall numbers are real measurements on this machine.
+- The data is synthetic. Each modality includes confusable sibling classes (e.g. wetland/water/forest, AAV capsid/Rep, CD4/CD8/T cells), 10% of items are generated from a sibling class while keeping their label, and sibling signal is blended into every item. That brings held-out precision to ~0.80–0.90 (v1: 0.95–0.98) — harder, but still easier than real data. The scale, latency and recall numbers are real measurements on this machine.
 - The text encoder is lexical (hashed words + char n-grams), so paraphrases with no shared vocabulary will miss. It sits behind one interface, so a sentence-embedding model drops in.
 - The Claude planner path is implemented but does not show a particular advantage, which may solely be due to the synthetic data itself.
 

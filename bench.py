@@ -10,10 +10,16 @@ import subprocess
 import sys
 import tempfile
 import time
+from typing import Any
+
 import numpy as np
-from prism import pipeline as P, synth, agent as A
+
+from prism import pipeline as P
+from prism import synth
 from prism.encoders import PrismEncoder
 from prism.engine import Engine
+from prism.harness import Harness
+from prism.planners import RulePlanner
 
 # Held-out natural-language queries: NOT the training caption templates.
 HELDOUT = {
@@ -73,6 +79,7 @@ CI_THRESHOLDS = {
     "agent runs grounded": ("agent_grounded", "==", 1.0),
     "agent claims contradicted": ("agent_contradicted", "==", 0.0),
     "agent claims verified": ("agent_verified", ">=", 1.0),
+    "cold inspect p50 ms": ("inspect_cold_p50_ms", "<=", 100.0),
     "resume recomputes only dropped batches": ("resume_exact", "==", 1.0),
     "resume output identical to original": ("resume_identical", "==", 1.0),
     "second resume recomputes nothing": ("resume_second_items", "==", 0.0),
@@ -88,6 +95,7 @@ def ci_metrics(R):
             "agent_grounded": float(all(a["grounded"] for a in R["agent"])),
             "agent_contradicted": float(sum(len(a["claims"]["contradicted"]) for a in R["agent"])),
             "agent_verified": float(sum(a["claims"]["verified"] for a in R["agent"])),
+            "inspect_cold_p50_ms": R["inspect_cold"]["p50_ms"],
             "resume_exact": float(rs["recomputed_batches"] == rs["dropped_batches"]),
             "resume_identical": float(rs["identical_after_resume"]), "resume_second_items": float(rs["second_resume_items"])}
 
@@ -175,10 +183,22 @@ def main():
     eng = Engine(index, model)
     R["resume"] = resume_check(descs, model, stage, a.workers)
     print("resume:", R["resume"])
+
+    # --- cold inspect: re-fetching single items must cost a chunk, not a batch
+    from prism import engine as engine_mod
+    engine_mod._fetch_chunk.cache_clear()
+    cold = np.random.default_rng(5).choice(np.flatnonzero(eng.cat["mod"] >= 0), 60, replace=False)
+    lat = []
+    for i in cold:
+        t = time.perf_counter(); eng.inspect(int(i)); lat.append(time.perf_counter() - t)
+    t = time.perf_counter(); synth.GENERATORS["sat"](descs[0]["n"], 1); batch_ms = (time.perf_counter() - t) * 1e3
+    R["inspect_cold"] = {"p50_ms": float(np.percentile(lat, 50) * 1e3), "p99_ms": float(np.percentile(lat, 99) * 1e3),
+                         "chunk_items": synth.CHUNK, "batch_items": descs[0]["n"], "sat_batch_regen_ms": batch_ms}
+    print("cold inspect:", R["inspect_cold"])
     cat = eng.cat
 
     # --- cross-modal retrieval quality (held-out text -> each modality)
-    q = {}
+    q: dict[str, Any] = {}
     for mod, classes in HELDOUT.items():
         per = {}
         for cname, qs in classes.items():
@@ -229,12 +249,12 @@ def main():
     # --- agent runs
     runs = []
     for qn in DEMO_QUESTIONS:
-        r = A.RulePlanner().run(A.Harness(eng, trace_dir=f"{a.out}/traces"), qn)
+        r = RulePlanner().run(Harness(eng, trace_dir=f"{a.out}/traces"), qn)
         runs.append(r); print("\n" + qn + "\n" + r["answer"])
     R["agent"] = [{k: v for k, v in r.items()} for r in runs]
     R["checks"] = check_thresholds(R)
     json.dump(R, open(a.results, "w"), indent=1, default=str)
-    print(json.dumps({k: R[k] for k in ("ingest", "build", "ann", "filtered_search_p50_ms", "resume")}, indent=1, default=str))
+    print(json.dumps({k: R[k] for k in ("ingest", "build", "ann", "filtered_search_p50_ms", "resume", "inspect_cold")}, indent=1, default=str))
     print({m: round(v["mean_p@10"], 3) for m, v in q.items()})
     if a.ci:
         print("\nCI thresholds:")

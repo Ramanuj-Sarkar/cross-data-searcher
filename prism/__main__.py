@@ -6,6 +6,7 @@
 import argparse
 import json
 import os
+
 from . import pipeline as P
 from .encoders import PrismEncoder
 
@@ -37,8 +38,9 @@ def main():
     from .engine import Engine
     eng = Engine(index, model, today=getattr(args, "today", None))
     if args.cmd == "ask":
-        from . import agent as A
-        r = A.default_planner().run(A.Harness(eng, trace_dir=f"{args.out}/traces"), args.question)
+        from .harness import Harness
+        from .planners import default_planner
+        r = default_planner().run(Harness(eng, trace_dir=f"{args.out}/traces"), args.question)
         print(r["answer"]); print(f"\n[grounded={r['grounded']} steps={r['steps']} {r['total_ms']}ms trace={r['trace']}]")
     elif args.cmd == "serve":
         from .server import serve

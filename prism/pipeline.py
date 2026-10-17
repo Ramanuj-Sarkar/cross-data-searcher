@@ -9,18 +9,21 @@ Workers only receive descriptors, never raw bytes, so the same code runs on Ray 
 Dask / k8s Jobs by swapping the Pool. Resume: batches already in the manifest are skipped.
 """
 from __future__ import annotations
+
 import json
 import os
 import time
-from concurrent.futures import ProcessPoolExecutor, wait, FIRST_COMPLETED
+from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
 from concurrent.futures.process import BrokenProcessPool
 from multiprocessing import get_context
+
 import numpy as np
+
 from . import synth
 from .encoders import PrismEncoder
 from .index import ShardedIVF
 
-_ENC = None
+_ENC: PrismEncoder | None = None
 
 
 def _init(model_path):
@@ -33,6 +36,7 @@ def _work(desc):
     mod, bid, n, seed = desc["mod"], desc["batch"], desc["n"], desc["seed"]
     raw, labels, meta = synth.GENERATORS[mod](n, seed)          # stand-in for an object-store read
     t1 = time.perf_counter()
+    assert _ENC is not None, "worker not initialised"
     vec, summ = _ENC.encode(mod, raw)
     t2 = time.perf_counter()
     ids = bid * desc["bs"] + np.arange(n, dtype=np.int64)
@@ -54,7 +58,8 @@ def _stage(stage_dir, r):
     """Atomic write: a crash mid-write can never leave a truncated batch file behind."""
     final = f"{stage_dir}/b{r['batch']:06d}.npz"
     tmp = final + ".tmp.npz"
-    np.savez(tmp, mod=np.array(r["mod"]), **{k: v for k, v in r.items() if isinstance(v, np.ndarray)})
+    arrays = {"mod": np.array(r["mod"]), **{k: v for k, v in r.items() if isinstance(v, np.ndarray)}}
+    np.savez(tmp, **arrays)  # type: ignore[arg-type]  # numpy stubs reserve 'allow_pickle'
     os.replace(tmp, final)
 
 
@@ -81,8 +86,8 @@ def ingest(descs, model_path, stage_dir, workers=2, log=print, every=50, stall_t
     log(f"ingest: {len(descs)} batches planned, {len(done)} already staged, {len(todo)} to run, {workers} workers")
     for v in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "VECLIB_MAXIMUM_THREADS", "MKL_NUM_THREADS"):
         os.environ.setdefault(v, "1")  # inherited by spawned workers: 1 BLAS thread each, no oversubscription
-    t0 = time.perf_counter(); n_items = 0; per_mod = {}; lat = []; n_done = 0
-    it = iter(todo); pending = set()
+    t0 = time.perf_counter(); n_items = 0; per_mod: dict[str, int] = {}; lat = []; n_done = 0
+    it = iter(todo); pending: set = set()
     with ProcessPoolExecutor(workers, mp_context=get_context("spawn"), initializer=_init,
                              initargs=(model_path,)) as ex, open(man_path, "a") as man:
         def refill():
@@ -134,7 +139,7 @@ def build(stage_dir, index_dir, n_shards=4, nlist=None, log=print):
     t1 = time.perf_counter()
     # columnar catalog, dense by id
     max_id = max(int(p["ids"].max()) for p in parts) + 1
-    cat = {"mod": np.full(max_id, -1, np.int8), "label": np.full(max_id, -1, np.int16)}
+    cat: dict[str, np.ndarray] = {"mod": np.full(max_id, -1, np.int8), "label": np.full(max_id, -1, np.int16)}
     for c in ("lat", "lon", "s1", "s2", "s3"):
         cat[c] = np.full(max_id, np.nan, np.float32)
     cat["t"] = np.full(max_id, -1, np.int32)

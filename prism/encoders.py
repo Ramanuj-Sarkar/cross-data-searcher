@@ -13,9 +13,12 @@ The text encoder is deliberately dependency-free (hashed words + char 4-grams).
 Swap `TextEncoder` for any sentence-embedding model; nothing else changes.
 """
 from __future__ import annotations
+
 import re
 import zlib
+
 import numpy as np
+
 from . import synth
 
 D = 256

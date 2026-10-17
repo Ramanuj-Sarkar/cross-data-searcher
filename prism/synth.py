@@ -4,9 +4,15 @@ These stand in for real object-store readers (Sentinel-2 COGs, FASTA/BAM, AnnDat
 Each generator is deterministic given (seed) so distributed workers can
 "fetch" a batch from a descriptor alone — the same contract a real
 reader would have (descriptor = URI + byte range).
+
+Item addressability: a batch is generated as independent CHUNK-item chunks, each seeded from
+(batch seed, chunk index). Any single item can therefore be re-fetched by generating just its chunk
+(gen_chunk), bit-identical to the batch path, instead of regenerating the whole batch.
 """
 from __future__ import annotations
+
 import zlib
+
 import numpy as np
 
 # ----------------------------------------------------------------------------
@@ -108,8 +114,7 @@ def _smooth(rng, n, grid, size=TILE):
     return out
 
 
-def gen_sat(n: int, seed: int, labels=None):
-    rng = np.random.default_rng(seed)
+def _sat_chunk(n: int, rng, labels=None):
     gen = labels
     if labels is None:
         labels = rng.integers(0, len(SAT_CLASSES), n)
@@ -171,6 +176,7 @@ DNA_CLASSES = ["aav_capsid", "lentiviral_backbone", "crispr_cas9", "human_mito",
                "lentiviral_gag", "rodent_mito", "phage_t4"]
 _SHARES_MOTIFS = {"aav_rep": "aav_capsid", "cas12a_cassette": "crispr_cas9", "lentiviral_gag": "lentiviral_backbone",
                   "rodent_mito": "human_mito", "phage_t4": "bacteriophage"}
+CHUNK = 128            # items per independently seeded chunk (see module docstring)
 MOTIF_COUNT = (2, 6)   # v1: (4, 9) motif insertions per sequence
 MOTIF_MUT = 0.10       # v1: 0.04
 BASE_MUT = 0.03        # v1: 0.01
@@ -196,31 +202,46 @@ def _fam(name):
     return _FAM_CACHE[name]
 
 
-def gen_dna(n: int, seed: int, labels=None):
-    rng = np.random.default_rng(seed)
+_CHAINS = None
+
+
+def _chains():
+    """All families' Markov chains stacked, so one 1000-step loop serves every class in a chunk."""
+    global _CHAINS
+    if _CHAINS is None:
+        fams = [_fam(c) for c in DNA_CLASSES]
+        _CHAINS = (np.stack([np.cumsum(f[0]) for f in fams]).astype(np.float32),
+                   np.stack([f[1] for f in fams]).astype(np.float32).reshape(-1, 4))  # row = class * 4 + previous base
+    return _CHAINS
+
+
+def _dna_chunk(n: int, rng, labels=None):
     gen = labels
     if labels is None:
         labels = rng.integers(0, len(DNA_CLASSES), n)
         gen = _content_labels("dna", labels, rng, DNA_CLASSES)
-    seqs = np.empty((n, DNA_LEN), np.uint8)
+    init, rows = _chains()
+    u = rng.random((DNA_LEN, n), dtype=np.float32)
+    steps = np.empty((DNA_LEN, n), np.uint8)
+    steps[0] = (u[0][:, None] > init[gen]).sum(1)
+    base = gen.astype(np.int64) * 4
+    for j in range(1, DNA_LEN):
+        steps[j] = (u[j][:, None] > rows[base + steps[j - 1]]).sum(1)
+    seqs = np.ascontiguousarray(steps.T)
     for ci, cname in enumerate(DNA_CLASSES):
         idx = np.flatnonzero(gen == ci); m = len(idx)
         if m == 0:
             continue
-        p, cT, motifs = _fam(cname)
-        s = np.empty((m, DNA_LEN), np.uint8)
-        s[:, 0] = rng.choice(4, m, p=p)
-        u = rng.random((m, DNA_LEN), dtype=np.float32)
-        for j in range(1, DNA_LEN):
-            s[:, j] = (u[:, j, None] > cT[s[:, j - 1]]).sum(1)
-        rows = np.arange(m)[:, None]
+        motifs = _fam(cname)[2]
+        s = seqs[idx]
+        r_ = np.arange(m)[:, None]
         for _ in range(int(rng.integers(*MOTIF_COUNT))):
             mi = rng.integers(0, len(motifs), m)
             pos = rng.integers(0, DNA_LEN - _MOTIF_LEN, m)
             mot = motifs[mi].copy()
             mut = rng.random(mot.shape) < MOTIF_MUT
             mot[mut] = rng.integers(0, 4, mut.sum())
-            s[rows, pos[:, None] + np.arange(_MOTIF_LEN)] = mot
+            s[r_, pos[:, None] + np.arange(_MOTIF_LEN)] = mot
         seqs[idx] = s
     mut = rng.random(seqs.shape) < BASE_MUT
     seqs[mut] = rng.integers(0, 4, mut.sum())
@@ -271,9 +292,9 @@ def _profiles():
         r = np.random.default_rng(7)
         mu = r.lognormal(-1, 1.5, N_GENES)
         mu[: len(MARKER_GENES)] = np.median(mu) * 0.3
-        P = []; progs = {}
+        P = []; progs: dict[str, np.ndarray] = {}
         pool = np.arange(len(MARKER_GENES), N_GENES)
-        for ci, c in enumerate(CELL_CLASSES):
+        for c in CELL_CLASSES:
             mult = np.ones(N_GENES)
             mult[[GENES.index(g) for g in _MARKERS[c]]] = MARKER_FOLD
             prog = r.choice(pool, 60, replace=False)
@@ -287,8 +308,7 @@ def _profiles():
     return _CELL_PROFILES
 
 
-def gen_cell(n: int, seed: int, labels=None):
-    rng = np.random.default_rng(seed)
+def _cell_chunk(n: int, rng, labels=None):
     gen = labels
     if labels is None:
         labels = rng.integers(0, len(CELL_CLASSES), n)
@@ -401,6 +421,29 @@ CAPTIONS = {
     },
 }
 CLASSES = {"sat": SAT_CLASSES, "dna": DNA_CLASSES, "cell": CELL_CLASSES}
+_CHUNK_FNS = {"sat": _sat_chunk, "dna": _dna_chunk, "cell": _cell_chunk}
+
+
+def gen_chunk(mod: str, n: int, seed: int, c: int, labels=None):
+    """Chunk `c` (items c*CHUNK .. ) of the n-item batch `seed`: (raw, labels, meta). Identical to the same
+    slice of GENERATORS[mod](n, seed), at 1/(n/CHUNK) of the cost."""
+    lo = c * CHUNK
+    if not 0 <= lo < n:
+        raise IndexError(f"chunk {c} outside batch of {n}")
+    size = min(CHUNK, n - lo)
+    sub = None if labels is None else np.asarray(labels)[lo:lo + size]
+    return _CHUNK_FNS[mod](size, np.random.default_rng([seed, c]), sub)
+
+
+def _batch(mod):
+    def gen(n: int, seed: int, labels=None):
+        parts = [gen_chunk(mod, n, seed, c, labels) for c in range(-(-n // CHUNK))]
+        meta = {k: np.concatenate([p[2][k] for p in parts]) for k in parts[0][2]}
+        return np.concatenate([p[0] for p in parts]), np.concatenate([p[1] for p in parts]), meta
+    return gen
+
+
+gen_sat, gen_dna, gen_cell = _batch("sat"), _batch("dna"), _batch("cell")
 GENERATORS = {"sat": gen_sat, "dna": gen_dna, "cell": gen_cell}
 MODALITIES = ["sat", "dna", "cell"]
 MOD_CODE = {m: i for i, m in enumerate(MODALITIES)}

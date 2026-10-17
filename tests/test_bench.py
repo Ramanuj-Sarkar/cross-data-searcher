@@ -2,6 +2,7 @@
 import copy
 import os
 import sys
+
 from test_core import env
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -14,6 +15,7 @@ def good_result():
         "text_to_modality_p@10": {m: {"mean_p@10": 0.9} for m in ("sat", "dna", "cell")},
         "filtered_search_p50_ms": 2.0, "ingest": {"items_per_s": 9000.0},
         "agent": [{"grounded": True, "claims": {"verified": 5, "contradicted": []}}],
+        "inspect_cold": {"p50_ms": 8.0},
         "resume": {"dropped_batches": 4, "recomputed_batches": 4, "identical_after_resume": True, "second_resume_items": 0},
     }
 
@@ -34,6 +36,7 @@ def test_thresholds_catch_each_regression():
     assert failing(lambda R: R["ingest"].update({"items_per_s": 10})) == {"ingest items/s"}
     assert failing(lambda R: R["agent"][0].update({"grounded": False})) == {"agent runs grounded"}
     assert failing(lambda R: R["agent"][0]["claims"].update({"contradicted": [{}]})) == {"agent claims contradicted"}
+    assert failing(lambda R: R["inspect_cold"].update({"p50_ms": 400})) == {"cold inspect p50 ms"}
     assert failing(lambda R: R["resume"].update({"recomputed_batches": 9})) == {"resume recomputes only dropped batches"}
     assert failing(lambda R: R["resume"].update({"identical_after_resume": False})) == {"resume output identical to original"}
     assert failing(lambda R: R["resume"].update({"second_resume_items": 1024})) == {"second resume recomputes nothing"}

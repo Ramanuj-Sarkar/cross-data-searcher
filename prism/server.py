@@ -7,12 +7,14 @@
   POST /agent    {"question": "..."}
 """
 from __future__ import annotations
+
 import hmac
 import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from . import agent as A
 
+from .harness import Harness
+from .planners import default_planner
 
 UI = (Path(__file__).parent / "static" / "index.html").read_text(encoding="utf-8")
 
@@ -53,13 +55,13 @@ def make_server(eng, host="127.0.0.1", port=8080, trace_dir="traces", token=None
             try:
                 n = int(self.headers.get("content-length", 0))
             except ValueError:
-                raise BadRequest("bad content-length")
+                raise BadRequest("bad content-length") from None
             if n < 0 or n > MAX_BODY:
                 raise BadRequest("body too large")
             try:
                 return json.loads(self.rfile.read(n) or b"{}")
             except ValueError:
-                raise BadRequest("invalid JSON")
+                raise BadRequest("invalid JSON") from None
 
         def _authorized(self):
             if token is None:
@@ -98,8 +100,8 @@ def make_server(eng, host="127.0.0.1", port=8080, trace_dir="traces", token=None
                     if not isinstance(q, str) or not q.strip() or len(q) > 2000:
                         raise BadRequest("question must be a non-empty string (max 2000 chars)")
                     # Harness is created per request, so concurrent runs share no state.
-                    h = A.Harness(eng, trace_dir=trace_dir)
-                    return self._send(200, A.default_planner().run(h, q))
+                    h = Harness(eng, trace_dir=trace_dir)
+                    return self._send(200, default_planner().run(h, q))
                 self._send(404, {"error": "not found"})
             except (BadRequest, ValueError, KeyError, TypeError) as e:
                 self._send(400, {"error": str(e)})
