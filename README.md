@@ -87,7 +87,7 @@ uv pip install numpy
 python bench.py --items 1000000 --workers 2 && python tests/test_core.py
 ```
 
-## Be upfront with judges
+## Caveats
 
 - The data is synthetic. Precision of 1.00 reflects separable classes, not real-world difficulty. The scale, latency and recall numbers are real measurements on this machine.
 - The text encoder is lexical (hashed words + char n-grams), so paraphrases with no shared vocabulary will miss. It sits behind one interface, so a sentence-embedding model drops in.
